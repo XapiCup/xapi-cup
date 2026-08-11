@@ -623,6 +623,88 @@ a:hover { text-decoration: underline; }
 .modal h3 { margin-top: 0; }
 .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
 
+/* ----- Login screen ----- */
+.login-screen {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(135deg, #0f5132 0%, #198754 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 9999;
+}
+.login-screen::before {
+  content: '';
+  position: absolute; inset: 0;
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(255,255,255,0.10) 0%, transparent 40%),
+    radial-gradient(circle at 80% 70%, rgba(193, 39, 45, 0.25) 0%, transparent 50%);
+  pointer-events: none;
+}
+.login-card {
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  padding: 36px;
+  max-width: 460px;
+  width: 100%;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.3);
+  position: relative;
+  z-index: 1;
+  animation: modalIn 300ms ease;
+}
+.login-header { text-align: center; margin-bottom: 24px; }
+.login-icon {
+  font-size: 3rem;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-2));
+  width: 72px; height: 72px;
+  border-radius: 50%;
+  display: inline-grid; place-items: center;
+  margin-bottom: 12px;
+  box-shadow: 0 8px 24px rgba(15, 81, 50, 0.3);
+}
+.login-header h1 { font-size: 1.6rem; margin-bottom: 4px; }
+.login-step { display: none; animation: fadeIn 250ms ease; }
+.login-step.active { display: block; }
+.login-step h3 { color: var(--color-primary); margin-bottom: 12px; }
+.code-display {
+  font-family: 'Oswald', monospace;
+  font-size: 2.4rem;
+  font-weight: 700;
+  letter-spacing: 0.4em;
+  text-align: center;
+  color: var(--color-accent);
+  background: var(--color-surface-2);
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  margin: 12px 0;
+  user-select: all;
+}
+.login-footer {
+  text-align: center;
+  margin-top: 20px;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+.auth-banner {
+  background: var(--color-surface-2);
+  border-bottom: 1px solid var(--color-border);
+  padding: 8px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.auth-banner .auth-info {
+  display: flex; align-items: center; gap: 8px;
+  color: var(--color-muted);
+}
+.auth-banner .auth-info strong { color: var(--color-primary); }
+.auth-banner .auth-actions { display: flex; gap: 6px; }
+
 /* ----- Utilities ----- */
 .muted { color: var(--color-muted); }
 .flex { display: flex; }

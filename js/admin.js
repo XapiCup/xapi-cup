@@ -10,6 +10,9 @@ import {
 import { renderPoule, renderBracket } from './render.js';
 import { $, $$, el, clear, toast, downloadFile, onReady, teamColor } from './app.js';
 import { exportElementAsImage } from './export.js';
+import {
+  isAuthenticated, renderLoginScreen, bindLogoutButton,
+} from './auth.js';
 
 // ================================================================
 // STATE LOCAL (UI state only, pas métier)
@@ -21,7 +24,35 @@ let pendingQualifierOverride = null; // édition manuelle des qualifiés
 // ENTRY POINT
 // ================================================================
 onReady(() => {
+  // Vérifier la session
+  if (!isAuthenticated()) {
+    // Affiche l'écran de login, cache tout le reste
+    document.getElementById('admin-header').style.display = 'none';
+    document.getElementById('auth-banner').style.display = 'none';
+    document.getElementById('admin-content').style.display = 'none';
+    document.body.style.overflow = 'hidden';
+
+    renderLoginScreen(document.body, () => {
+      // Succès : on recharge la page pour démarrer proprement
+      location.reload();
+    });
+    return;
+  }
+
+  // Session valide : afficher le contenu admin
+  document.getElementById('admin-header').style.display = '';
+  document.getElementById('auth-banner').style.display = 'flex';
+  document.getElementById('admin-content').style.display = '';
+  document.body.style.overflow = '';
+
+  // Timer de session
+  updateSessionTimer();
+  setInterval(updateSessionTimer, 60_000);
+
   bindUI();
+  bindLogoutButton();
+  bindPasswordChange();
+
   // Rendu à chaque changement d'état
   store.subscribe((state) => {
     renderTeamsList(state);
@@ -37,6 +68,71 @@ onReady(() => {
   renderKnockoutSection(store.state);
   syncSelectsWithState(store.state);
 });
+
+function updateSessionTimer() {
+  const el = document.getElementById('session-timer');
+  if (!el) return;
+  if (!isAuthenticated()) {
+    el.textContent = '(session expirée)';
+    return;
+  }
+  try {
+    const raw = localStorage.getItem('xapi-cup-session-v1');
+    const s = JSON.parse(raw);
+    const ms = s.expiresAt - Date.now();
+    const h = Math.floor(ms / 3_600_000);
+    const m = Math.floor((ms % 3_600_000) / 60_000);
+    el.textContent = `· session expire dans ${h}h${String(m).padStart(2,'0')}`;
+  } catch (e) {
+    el.textContent = '';
+  }
+}
+
+function bindPasswordChange() {
+  const modal = document.getElementById('password-modal');
+  const open = () => {
+    document.getElementById('pwd-current').value = '';
+    document.getElementById('pwd-new').value = '';
+    document.getElementById('pwd-new2').value = '';
+    document.getElementById('pwd-error').innerHTML = '';
+    modal.classList.add('show');
+    setTimeout(() => document.getElementById('pwd-current').focus(), 50);
+  };
+  const close = () => modal.classList.remove('show');
+
+  document.getElementById('change-pwd-btn').addEventListener('click', open);
+  document.getElementById('pwd-cancel').addEventListener('click', close);
+  modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+
+  document.getElementById('pwd-save').addEventListener('click', async () => {
+    const cur = document.getElementById('pwd-current').value;
+    const n1 = document.getElementById('pwd-new').value;
+    const n2 = document.getElementById('pwd-new2').value;
+    const errSlot = document.getElementById('pwd-error');
+    errSlot.innerHTML = '';
+
+    if (!cur || !n1 || !n2) {
+      errSlot.innerHTML = '<div class="alert alert-danger" style="margin-top:10px;">Tous les champs sont requis.</div>';
+      return;
+    }
+    if (n1 !== n2) {
+      errSlot.innerHTML = '<div class="alert alert-danger" style="margin-top:10px;">Les deux nouveaux mots de passe ne correspondent pas.</div>';
+      return;
+    }
+    if (n1.length < 6) {
+      errSlot.innerHTML = '<div class="alert alert-danger" style="margin-top:10px;">6 caractères minimum.</div>';
+      return;
+    }
+    try {
+      const { changePassword } = await import('./auth.js');
+      await changePassword(cur, n1);
+      close();
+      toast('Mot de passe mis à jour avec succès.', 'success');
+    } catch (e) {
+      errSlot.innerHTML = `<div class="alert alert-danger" style="margin-top:10px;">${e.message}</div>`;
+    }
+  });
+}
 
 // ================================================================
 // BINDING UI
