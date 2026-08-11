@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin — Xapi Cup</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="index.html" class="logo">
+        <span class="logo-mark">⚽</span>
+        <div class="logo-text">
+          <span class="logo-title">XAPI <strong>CUP</strong></span>
+          <span class="logo-sub">Espace administrateur</span>
+        </div>
+      </a>
+      <nav class="main-nav">
+        <a href="index.html" class="nav-link">Accueil</a>
+        <a href="viewer.html" class="nav-link">Vue publique</a>
+        <a href="admin.html" class="nav-link nav-admin active">Admin</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="admin-layout">
+    <aside class="admin-sidebar">
+      <h2>Configuration</h2>
+      <ul class="admin-nav">
+        <li><a href="#section-teams" class="active" data-tab="teams">1. Équipes</a></li>
+        <li><a href="#section-poules" data-tab="poules">2. Poules & matchs</a></li>
+        <li><a href="#section-qualifiers" data-tab="qualifiers">3. Qualification</a></li>
+        <li><a href="#section-knockout" data-tab="knockout">4. Phase finale</a></li>
+        <li><a href="#section-export" data-tab="export">5. Export & sauvegarde</a></li>
+      </ul>
+      <h2>Raccourcis</h2>
+      <ul class="admin-nav">
+        <li><a href="viewer.html" target="_blank">↗ Ouvrir la vue publique</a></li>
+        <li><a href="#" id="nav-reset">⚠ Réinitialiser tout</a></li>
+      </ul>
+    </aside>
+
+    <main class="admin-main">
+
+      <!-- ========== SECTION 1 : ÉQUIPES ========== -->
+      <section id="section-teams" class="admin-section">
+        <h2>1. Équipes inscrites</h2>
+        <p class="section-help">Saisissez les noms des équipes. La liste se sauvegarde automatiquement et est synchronisée avec la page publique.</p>
+
+        <div class="form-row">
+          <div class="form-group" style="flex: 3;">
+            <label for="team-input">Ajouter une équipe</label>
+            <input type="text" id="team-input" class="input" placeholder="Ex: FC Hasparren, Real Basque, Athletic U13..." />
+            <p class="help">Astuce : appuyez sur <kbd>Entrée</kbd> pour ajouter rapidement.</p>
+          </div>
+          <div class="form-group" style="flex: 1; min-width: 100px;">
+            <label>&nbsp;</label>
+            <button class="btn btn-success" id="add-team-btn" style="width:100%;">+ Ajouter</button>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group" style="flex: 2;">
+            <label for="bulk-input">Ajout en masse (une équipe par ligne)</label>
+            <textarea id="bulk-input" class="input" rows="4" placeholder="FC Hasparren
+Real Basque
+Athletic U13
+Aviron Bayonne
+..."></textarea>
+          </div>
+          <div class="form-group" style="flex: 1; min-width: 100px;">
+            <label>&nbsp;</label>
+            <button class="btn btn-accent" id="bulk-add-btn" style="width:100%;">+ Tout ajouter</button>
+          </div>
+        </div>
+
+        <div class="flex-between mt-3 mb-2">
+          <h3 style="margin:0;">
+            Liste des équipes
+            <span class="teams-count" id="teams-count">0</span>
+          </h3>
+          <button class="btn btn-sm btn-danger" id="clear-teams-btn">Vider la liste</button>
+        </div>
+        <ul class="teams-list" id="teams-list">
+          <li class="muted" style="grid-column: 1 / -1; text-align:center; padding: 20px;">Aucune équipe inscrite pour l'instant.</li>
+        </ul>
+      </section>
+
+      <!-- ========== SECTION 2 : POULES & MATCHS ========== -->
+      <section id="section-poules" class="admin-section">
+        <h2>2. Poules & matchs</h2>
+        <p class="section-help">Définissez le nombre de poules, puis générez le tirage. Les poules sont équilibrées et l'ordre des matchs est mélangé.</p>
+
+        <div id="poules-alert-slot"></div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="nb-poules">Nombre de poules</label>
+            <select id="nb-poules" class="select">
+              <option value="2">2 poules</option>
+              <option value="3">3 poules</option>
+              <option value="4" selected>4 poules</option>
+              <option value="6">6 poules</option>
+              <option value="8">8 poules</option>
+            </select>
+            <p class="help">Le tirage répartit les équipes de manière équilibrée (écart max 1).</p>
+          </div>
+          <div class="form-group">
+            <label>&nbsp;</label>
+            <button class="btn btn-accent" id="generate-poules-btn" style="width:100%;">🎲 Générer les poules</button>
+          </div>
+        </div>
+
+        <div id="poules-container" class="mt-3"></div>
+      </section>
+
+      <!-- ========== SECTION 3 : QUALIFICATION ========== -->
+      <section id="section-qualifiers" class="admin-section">
+        <h2>3. Qualification vers la phase finale</h2>
+        <p class="section-help">Choisissez combien d'équipes par poule se qualifient, et si la consolante est activée. Vous pourrez modifier manuellement les qualifiés avant de lancer les arbres.</p>
+
+        <div id="qualifiers-alert-slot"></div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="qualifiers-per-pool">Qualifiés par poule</label>
+            <select id="qualifiers-per-pool" class="select">
+              <option value="1">1 (les premiers uniquement)</option>
+              <option value="2" selected>2 (les 2 premiers)</option>
+              <option value="3">3 (les 3 premiers)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-group">
+              <input type="checkbox" id="enable-consolante" checked />
+              <span>Activer la consolante (arbre pour les non-qualifiés)</span>
+            </label>
+            <p class="help">Si activée, les équipes non-qualifiées jouent aussi un arbre à part.</p>
+          </div>
+        </div>
+
+        <div id="qualifiers-preview" class="mt-3"></div>
+
+        <div class="mt-3" id="qualifiers-actions" style="display: none;">
+          <button class="btn btn-primary" id="launch-brackets-btn">🚀 Lancer les arbres</button>
+        </div>
+      </section>
+
+      <!-- ========== SECTION 4 : PHASE FINALE ========== -->
+      <section id="section-knockout" class="admin-section">
+        <h2>4. Phase finale</h2>
+        <p class="section-help">Cliquez sur un match pour saisir le score et désigner le vainqueur. Les vainqueurs sont automatiquement propagés au tour suivant.</p>
+
+        <div class="tabs">
+          <button class="tab active" data-bracket-tab="gold">🏆 Tableau Or</button>
+          <button class="tab" data-bracket-tab="silver">🥈 Consolante</button>
+        </div>
+        <div id="knockout-container"></div>
+      </section>
+
+      <!-- ========== SECTION 5 : EXPORT & SAUVEGARDE ========== -->
+      <section id="section-export" class="admin-section">
+        <h2>5. Export & sauvegarde</h2>
+        <p class="section-help">Exportez l'arbre final en image, ou téléchargez une sauvegarde complète du tournoi (au format JSON).</p>
+
+        <h3>Export image</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="export-select">Quel arbre exporter ?</label>
+            <select id="export-select" class="select">
+              <option value="gold">Arbre Or uniquement</option>
+              <option value="silver">Consolante uniquement</option>
+              <option value="both">Les deux arbres (PNG large)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="export-format">Format</label>
+            <select id="export-format" class="select">
+              <option value="png">PNG (fond transparent géré)</option>
+              <option value="jpg">JPG (plus léger)</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex: 0; min-width: auto;">
+            <label>&nbsp;</label>
+            <button class="btn btn-primary" id="export-btn">📸 Exporter l'image</button>
+          </div>
+        </div>
+
+        <h3 class="mt-3">Sauvegarde / restauration</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <button class="btn btn-ghost" id="export-json-btn" style="background: var(--color-primary); color: #fff; border-color: var(--color-primary);">💾 Télécharger sauvegarde JSON</button>
+          </div>
+          <div class="form-group">
+            <label for="import-json-input" class="btn btn-ghost" style="background: var(--color-surface-2); color: var(--color-text); border: 1px solid var(--color-border); cursor: pointer;">📂 Restaurer depuis JSON</label>
+            <input type="file" id="import-json-input" accept=".json,application/json" style="display:none" />
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Modal pour saisir un score de bracket -->
+  <div class="modal-backdrop" id="bracket-modal">
+    <div class="modal">
+      <h3 id="modal-title">Saisir le score</h3>
+      <div id="modal-body"></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="modal-cancel" style="background: var(--color-surface-2); color: var(--color-text);">Annuler</button>
+        <button class="btn btn-success" id="modal-save">Valider</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Xapi Cup — Tournoi du club de foot d'Hasparren</title>
+  <meta name="description" content="Site officiel de la Xapi Cup — Tournoi de football du club d'Hasparren. Suivez les résultats, poules et arbres en direct." />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="index.html" class="logo">
+        <span class="logo-mark">⚽</span>
+        <div class="logo-text">
+          <span class="logo-title">XAPI <strong>CUP</strong></span>
+          <span class="logo-sub">Tournoi du club d'Hasparren</span>
+        </div>
+      </a>
+      <nav class="main-nav">
+        <a href="index.html" class="nav-link active">Accueil</a>
+        <a href="viewer.html" class="nav-link">Tournoi en direct</a>
+        <a href="admin.html" class="nav-link nav-admin">Admin</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container hero-inner">
+        <p class="hero-eyebrow">Édition annuelle</p>
+        <h1 class="hero-title">La <span class="accent">Xapi Cup</span></h1>
+        <p class="hero-tag">Le tournoi de foot du club d'Hasparren. Poules, arbres, scores en direct.</p>
+        <div class="hero-cta">
+          <a class="btn btn-primary" href="viewer.html">Voir le tournoi en direct →</a>
+          <a class="btn btn-ghost" href="admin.html">Espace administrateur</a>
+        </div>
+      </div>
+      <div class="hero-decoration" aria-hidden="true">
+        <div class="ball ball-1"></div>
+        <div class="ball ball-2"></div>
+        <div class="ball ball-3"></div>
+      </div>
+    </section>
+
+    <section class="container features">
+      <article class="feature-card">
+        <div class="feature-icon">📺</div>
+        <h3>Suivi en direct</h3>
+        <p>Une page publique pour que les supporters, familles et amis suivent poules, scores et arbres à élimination directe en temps réel.</p>
+        <a class="feature-link" href="viewer.html">Ouvrir la page publique →</a>
+      </article>
+      <article class="feature-card">
+        <div class="feature-icon">⚙️</div>
+        <h3>Espace admin</h3>
+        <p>Inscription des équipes, tirage des poules, saisie des scores, qualification manuelle des meilleurs, export de l'arbre final en image.</p>
+        <a class="feature-link" href="admin.html">Accéder à l'admin →</a>
+      </article>
+      <article class="feature-card">
+        <div class="feature-icon">🏆</div>
+        <h3>Deux arbres</h3>
+        <p>Un arbre pour les qualifiés (table Or) et un arbre de consolante pour les autres — tout le monde joue jusqu'au bout.</p>
+        <a class="feature-link" href="viewer.html">Voir les arbres →</a>
+      </article>
+    </section>
+
+    <section class="container how">
+      <h2 class="section-title">Comment ça marche</h2>
+      <ol class="how-steps">
+        <li><span class="step-num">1</span><div><strong>L'admin inscrit les équipes</strong><p>Saisissez les noms dans l'espace admin, puis générez les poules d'un clic.</p></div></li>
+        <li><span class="step-num">2</span><div><strong>Phase de poules</strong><p>L'admin met à jour les scores au fil des matchs. Le classement se met à jour automatiquement.</p></div></li>
+        <li><span class="step-num">3</span><div><strong>Qualification des meilleurs</strong><p>Choisissez combien d'équipes par poule se qualifient, modifiez manuellement si besoin, puis lancez les arbres.</p></div></li>
+        <li><span class="step-num">4</span><div><strong>Phase finale</strong><p>Arbre Or + arbre Consolante. Mises à jour live côté visiteurs. Export final en image.</p></div></li>
+      </ol>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <p>© <span id="year"></span> Xapi Cup — Club de foot d'Hasparren</p>
+      <p class="muted">Fait avec ❤️ par les supporters du club.</p>
+    </div>
+  </footer>
+
+  <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
+</body>
+</html>

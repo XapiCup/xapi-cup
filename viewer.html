@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tournoi en direct — Xapi Cup</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <meta http-equiv="refresh" content="60" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="index.html" class="logo">
+        <span class="logo-mark">⚽</span>
+        <div class="logo-text">
+          <span class="logo-title">XAPI <strong>CUP</strong></span>
+          <span class="logo-sub">Tournoi en direct</span>
+        </div>
+      </a>
+      <nav class="main-nav">
+        <a href="index.html" class="nav-link">Accueil</a>
+        <a href="viewer.html" class="nav-link active">Tournoi en direct</a>
+        <a href="admin.html" class="nav-link nav-admin">Admin</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <!-- Bandeau live -->
+    <section class="container" style="padding-top: 30px;">
+      <div class="flex-between" style="flex-wrap: wrap; gap: 12px;">
+        <div>
+          <h1 style="margin: 0;" id="page-title">Xapi Cup</h1>
+          <p class="muted" style="margin: 0;" id="page-subtitle">Suivez les poules et les phases finales en direct.</p>
+        </div>
+        <div id="live-status"></div>
+      </div>
+    </section>
+
+    <!-- Onglets : Poules / Phase finale -->
+    <section class="container" style="margin-top: 24px;">
+      <div class="tabs">
+        <button class="tab active" data-viewer-tab="poules">⚽ Poules &amp; classements</button>
+        <button class="tab" data-viewer-tab="knockout">🏆 Phase finale</button>
+      </div>
+    </section>
+
+    <!-- POULE -->
+    <section class="container tab-content active" id="tab-poules">
+      <div id="poules-container"></div>
+    </section>
+
+    <!-- PHASE FINALE -->
+    <section class="container tab-content" id="tab-knockout">
+      <div class="tabs" style="margin-bottom: 0;">
+        <button class="tab active" data-bracket-tab="gold">🥇 Tableau Or</button>
+        <button class="tab" data-bracket-tab="silver">🥈 Consolante</button>
+      </div>
+      <div id="knockout-container" style="margin-top: 20px;"></div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <p>© <span id="year"></span> Xapi Cup — Club de foot d'Hasparren</p>
+      <p class="muted">Page publique · Mises à jour en direct</p>
+    </div>
+  </footer>
+
+  <script type="module" src="js/viewer.js"></script>
+  <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
+</body>
+</html>
