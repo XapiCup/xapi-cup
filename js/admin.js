@@ -700,6 +700,8 @@ function launchBrackets() {
   [goldBracket, silverBracket].forEach((br) => {
     if (!br) return;
     br.rounds.forEach((round) => round.forEach((m) => allBracketMatches.push({ ...m })));
+    // Inclure aussi la petite finale dans la liste des matchs bracket
+    if (br.thirdPlaceMatch) allBracketMatches.push({ ...br.thirdPlaceMatch });
   });
 
   store.setCurrent((s) => {
