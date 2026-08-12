@@ -394,20 +394,12 @@ function buildTournamentCard(t) {
         onclick: (e) => { e.stopPropagation(); togglePublic(t); },
         title: t.public === false ? 'Rendre public' : 'Masquer du côté public',
       }, t.public === false ? '🔒 Privé' : '🌐 Public'),
-      el('button', {
-        class: 't-card-parallel' + (t.allowParallel !== false ? ' t-card-parallel--on' : ''),
-        onclick: (e) => { e.stopPropagation(); toggleParallel(t); },
-        title: t.allowParallel !== false ? 'Planning accepte les chevauchements (cliquer pour désactiver)' : 'Planning evitera les chevauchements (cliquer pour activer)',
-      }, t.allowParallel !== false ? '⚡ Parallèle OK' : '🚫 Pas en parallèle'),
     ),
     hasOverlap ? el('div', { class: 't-card-info' },
       '📆 Chevauche avec ',
       el('strong', {}, overlaps.map(o => (o.a.id === t.id ? o.b.name : o.a.name)).join(', ')),
       el('br'),
       el('span', { class: 'muted' }, overlaps[0].range),
-      t.allowParallel !== false
-        ? el('div', { class: 'muted', style: { fontSize: '0.75rem', marginTop: '4px' } }, '✓ Accepté (planning fera son possible)')
-        : el('div', { class: 'muted', style: { fontSize: '0.75rem', marginTop: '4px' } }, '⚠ Le planning décalera ce tournoi pour éviter le chevauchement'),
     ) : null,
     el('div', { class: 't-card-stats' },
       el('div', { class: 't-card-stat' },
@@ -465,13 +457,6 @@ function togglePublic(t) {
   renderDashboard();
 }
 
-function toggleParallel(t) {
-  const newVal = t.allowParallel === false;
-  store.setTournamentAllowParallel(t.id, newVal);
-  toast(newVal ? 'Planning accepte les chevauchements' : 'Planning decalera ce tournoi pour eviter les chevauchements', 'info');
-  renderDashboard();
-}
-
 function openTournament(id) {
   store.switchTournament(id);
   showTournamentView();
@@ -487,8 +472,12 @@ function duplicateTournament(id) {
 function archiveTournament(id) {
   const t = store.getTournament(id);
   if (!t) return;
+  const wasArchived = t.archived;
   store.archiveTournament(id);
-  toast(t.archived ? 'Désarchivé.' : 'Archivé.', 'info');
+  toast(wasArchived ? 'Désarchivé.' : 'Archivé.', 'info');
+  // Forcer le re-render immediat du dashboard pour eviter tout mismatch DOM/state
+  // (le subscriber peut etre en retard ou pas appele si on est sur la vue tournament)
+  if (view === 'dashboard') renderDashboard();
 }
 
 function deleteTournament(id) {
@@ -497,6 +486,8 @@ function deleteTournament(id) {
   if (!confirm(`Supprimer définitivement "${t.name}" ?`)) return;
   store.deleteTournament(id);
   toast('Supprimé.', 'warn');
+  // Forcer le re-render immediat du dashboard
+  if (view === 'dashboard') renderDashboard();
 }
 
 // ================================================================
