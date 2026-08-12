@@ -20,16 +20,6 @@ let activeViewerSubTab = 'poules';
 let lastHistoryLength = 0;
 
 onReady(() => {
-  $$('.v-tab').forEach((t) => {
-    t.addEventListener('click', () => {
-      $$('.v-tab').forEach((x) => x.classList.remove('active'));
-      t.classList.add('active');
-      const target = t.dataset.viewerTab;
-      $$('.tab-content').forEach((c) => { c.style.display = 'none'; c.classList.remove('active'); });
-      const tabEl = $('#tab-' + target);
-      if (tabEl) { tabEl.style.display = ''; tabEl.classList.add('active'); }
-    });
-  });
   $$('.tab[data-viewer-subtab]').forEach((t) => {
     t.addEventListener('click', () => {
       $$('.tab[data-viewer-subtab]').forEach((x) => x.classList.remove('active'));
@@ -128,7 +118,6 @@ function renderAll() {
   renderPoules(t);
   renderKnockout();
   renderHistory(t);
-  renderSchedule(t);
 }
 
 function renderHeader(t) {
@@ -226,81 +215,6 @@ function renderHistory(t) {
     list.appendChild(item);
   });
   lastHistoryLength = items.length;
-}
-
-function renderSchedule(t) {
-  const container = $('#schedule-public');
-  if (!container) return;
-  clear(container);
-  if (!t || !t.schedule?.length) {
-    container.appendChild(el('div', { class: 'empty-state' },
-      el('div', { class: 'empty-icon' }, '📅'),
-      el('h3', {}, 'Aucun planning publié.')));
-    return;
-  }
-  if (t.config?.schedulePublic === false) {
-    container.appendChild(el('div', { class: 'alert alert-info' },
-      'Le planning est actuellement masqué par l\'administrateur.'));
-    return;
-  }
-  container.appendChild(el('h2', { style: { marginTop: '0' } }, '📅 Planning — ' + t.name));
-  container.appendChild(el('p', { class: 'muted', style: { marginTop: '4px' } },
-    'Matchs simultanés joués en parallèle sur plusieurs terrains.'));
-  const slotsByDT = new Map();
-  t.schedule.forEach((s) => {
-    const key = s.date + '__' + s.time;
-    if (!slotsByDT.has(key)) slotsByDT.set(key, { date: s.date, time: s.time, terrains: [] });
-    slotsByDT.get(key).terrains.push(s);
-  });
-  const slots = Array.from(slotsByDT.values()).sort((a, b) =>
-    (a.date + a.time).localeCompare(b.date + b.time)
-  );
-  const matchesMap = new Map();
-  t.matches.forEach((m) => matchesMap.set(m.id, m));
-  (t.bracketMatches || []).forEach((m) => matchesMap.set(m.id, m));
-  const slotsByDate = new Map();
-  slots.forEach((s) => {
-    if (!slotsByDate.has(s.date)) slotsByDate.set(s.date, []);
-    slotsByDate.get(s.date).push(s);
-  });
-  const nbTerrains = Math.max(
-    t.config?.nbTerrains || 1,
-    ...t.schedule.map((s) => s.terrain)
-  );
-  Array.from(slotsByDate.entries()).sort(([a],[b]) => a.localeCompare(b)).forEach(([date, daySlots]) => {
-    container.appendChild(el('h3', { style: { color: 'var(--color-primary)', marginTop: '20px' } },
-      new Date(date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })));
-    const table = el('table', { class: 'standings-table' });
-    table.appendChild(el('thead', {}, el('tr', {},
-      el('th', {}, 'Heure'),
-      ...Array.from({ length: nbTerrains }, (_, i) => el('th', {}, `T${i + 1}`)),
-    )));
-    const tb = el('tbody');
-    daySlots.forEach((slot) => {
-      const tr = el('tr');
-      tr.appendChild(el('td', { style: { fontWeight: 600, verticalAlign: 'top' } }, slot.time));
-      for (let i = 0; i < nbTerrains; i++) {
-        const sc = slot.terrains.find((s) => s.terrain === i + 1);
-        if (!sc) { tr.appendChild(el('td', { class: 'muted', style: { color: '#aaa' } }, '—')); continue; }
-        const m = matchesMap.get(sc.matchId);
-        if (!m) { tr.appendChild(el('td', {}, '?')); continue; }
-        const tA = t.teams.find((x) => x.id === (m.slotA || m.teamA));
-        const tB = t.teams.find((x) => x.id === (m.slotB || m.teamB));
-        const aWins = m.winnerSlot === 'A';
-        const bWins = m.winnerSlot === 'B';
-        tr.appendChild(el('td', {},
-          el('div', { class: aWins ? 'winner' : '' }, (tA?.name || '?').substring(0, 14)),
-          el('div', { class: 'muted', style: { fontSize: '0.75rem', textAlign: 'center' } }, 'vs'),
-          el('div', { class: bWins ? 'winner' : '' }, (tB?.name || '?').substring(0, 14)),
-          m.scoreA != null ? el('div', { style: { fontWeight: 700, textAlign: 'center', marginTop: '4px' } },
-            `${m.scoreA} - ${m.scoreB}`) : null,
-        ));
-      }
-      tb.appendChild(tr);
-    });
-    table.appendChild(tb);
-    container.appendChild(table);
-  });
 }
 
 function updateFeedBadge() {

@@ -6,7 +6,6 @@
   <title>Tournoi en direct — Xapi Cup</title>
   <link rel="stylesheet" href="css/style.css" />
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <meta http-equiv="refresh" content="60" />
 </head>
 <body>
   <header class="site-header">
@@ -42,14 +41,8 @@
       </div>
     </section>
 
-    <!-- Onglets principaux : Tournoi en direct / Planning -->
-    <nav class="viewer-tabs container" id="viewer-tabs">
-      <button class="v-tab active" data-viewer-tab="live">🔴 Tournoi en direct</button>
-      <button class="v-tab" data-viewer-tab="schedule">📅 Planning</button>
-    </nav>
-
-    <!-- TOURNOI EN DIRECT -->
-    <section class="container tab-content active" id="tab-live">
+    <!-- TOURNOI EN DIRECT (onglet unique) -->
+    <section class="container">
       <div class="tabs">
         <button class="tab active" data-viewer-subtab="poules">⚽ Poules &amp; classements</button>
         <button class="tab" data-viewer-subtab="knockout">🏆 Phase finale</button>
@@ -64,11 +57,6 @@
         </div>
         <div id="knockout-container" style="margin-top: 20px;"></div>
       </div>
-    </section>
-
-    <!-- PLANNING (onglet séparé) -->
-    <section class="container tab-content" id="tab-schedule" style="display:none;">
-      <div id="schedule-public"></div>
     </section>
   </main>
 
