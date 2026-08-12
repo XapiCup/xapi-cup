@@ -177,7 +177,9 @@ export function buildBracket(seededTeams) {
   }
 
   // PETITE FINALE (match pour la 3e place) :
-  // S'il y a au moins 2 demi-finales (4+ équipes), créer le match entre les perdants des demi
+  // Si on a au moins 2 demi-finales (>= 4 equipes, donc totalRounds >= 2)
+  // Créer le match entre les perdants des demi-finales.
+  // Pour 2 équipes (size=2, 0 demi), pas de petite finale possible.
   let thirdPlaceMatch = null;
   if (totalRounds >= 2) {
     thirdPlaceMatch = {
@@ -186,15 +188,19 @@ export function buildBracket(seededTeams) {
       slotA: null, slotB: null,
       scoreA: null, scoreB: null,
       winnerSlot: null, finished: false,
-      // Les perdants des demi-finales (rounds[totalRounds-2], qui sont les matchs 0 et 1)
       fromSemis: true,
     };
   }
 
   // Propagation initiale : pour les byes, on propage déjà le vainqueur
-  propagateAllByes(rounds);
+  propagateAllByes(rounds, thirdPlaceMatch);
 
-  return { rounds, size, totalRounds, byes, thirdPlaceMatch };
+  // Titre par défaut (modifiable par l'admin)
+  const defaultTitle = totalRounds >= 2
+    ? (size === 2 ? 'Finale' : size === 4 ? 'Demi-finales + Finale' : `Arbre à ${size} équipes`)
+    : `Arbre à ${size} équipes`;
+
+  return { rounds, size, totalRounds, byes, thirdPlaceMatch, title: defaultTitle, kind: null };
 }
 
 /**

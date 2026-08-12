@@ -113,21 +113,30 @@ export function renderPoule(pouleIdx, teams, matches, qualifiersPerPool = 2, edi
 // ARBRE (bracket)
 // ============================================================
 export function renderBracket(bracket, state, opts = {}) {
-  const { title = 'Arbre', kind = 'gold', editable = false, onMatchClick = null, onClick = null, onWinnerSet = null } = opts;
+  const { kind = 'gold', editable = false, onMatchClick = null, onClick = null, onWinnerSet = null } = opts;
   // Compatibilite ascendante : on accepte 'onClick' comme alias de 'onMatchClick'
   const _onMatchClick = onMatchClick || onClick;
   if (!bracket) return null;
 
   const wrapper = el('div', { class: 'bracket-wrapper' });
 
-  // Titre + actions
+  // Titre + actions (utilise bracket.title si défini)
   const titleRow = el('div', { class: 'bracket-title' });
   const medalEmoji = kind === 'gold' ? '🥇' : '🥈';
   titleRow.appendChild(el('h2', {},
     el('span', { class: `medal ${kind === 'gold' ? 'gold' : 'silver'}` }, medalEmoji),
-    title
+    bracket.title || (kind === 'gold' ? 'Tableau Or' : 'Tableau Consolante')
   ));
   const actions = el('div', { class: 'bracket-actions' });
+  // Bouton renommer l'arbre (admin only)
+  if (opts.editable && opts.onRenameBracket) {
+    const renameBtn = el('button', {
+      class: 'btn-icon',
+      title: 'Renommer l\'arbre',
+      onclick: (e) => { e.stopPropagation(); opts.onRenameBracket(bracket); }
+    }, '✏️');
+    actions.appendChild(renameBtn);
+  }
   if (opts.actions) {
     opts.actions.forEach((a) => actions.appendChild(a));
   }

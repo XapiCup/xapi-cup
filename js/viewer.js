@@ -34,8 +34,20 @@ onReady(() => {
   const aside = $('#live-feed-aside');
   const toggle = $('#live-feed-toggle');
   const close = $('#live-feed-close');
-  toggle?.addEventListener('click', () => aside?.classList.toggle('collapsed'));
-  close?.addEventListener('click', () => aside?.classList.add('collapsed'));
+  if (toggle && aside) {
+    toggle.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      aside.classList.toggle('collapsed');
+    });
+  }
+  if (close && aside) {
+    close.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      aside.classList.add('collapsed');
+    });
+  }
   // Badge : compteur de nouveaux events
   let lastLen = 0;
   function updateFeedBadge() {

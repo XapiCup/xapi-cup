@@ -806,20 +806,25 @@ a:hover { text-decoration: underline; }
   position: fixed;
   bottom: 20px;
   right: 20px;
-  width: 56px;
-  height: 56px;
+  width: 60px;
+  height: 60px;
   border-radius: 50%;
   background: var(--color-primary);
   color: white;
-  border: none;
-  font-size: 1.4rem;
+  border: 3px solid var(--color-gold);
+  font-size: 1.6rem;
   cursor: pointer;
   z-index: 100;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
-  transition: var(--transition);
-  position: fixed;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  transition: transform var(--transition), background var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.live-feed-toggle:hover { transform: scale(1.05); }
+.live-feed-toggle:hover {
+  transform: scale(1.08);
+  background: var(--color-gold);
+}
 .live-feed-toggle-badge {
   position: absolute;
   top: 2px;

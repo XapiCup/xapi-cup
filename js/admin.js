@@ -683,17 +683,34 @@ function renderKnockoutTab() {
   }
   if (activeBracketTab === 'gold' && t.brackets.gold) {
     container.appendChild(renderBracket(t.brackets.gold, t, {
-      title: 'Tableau Or', kind: 'gold', editable: true, onClick: openBracketModal,
+      kind: 'gold', editable: true, onClick: openBracketModal,
+      onRenameBracket: (br) => renameBracket(br, 'gold'),
     }));
   } else if (activeBracketTab === 'silver' && t.brackets.silver) {
     container.appendChild(renderBracket(t.brackets.silver, t, {
-      title: 'Consolante', kind: 'silver', editable: true, onClick: openBracketModal,
+      kind: 'silver', editable: true, onClick: openBracketModal,
+      onRenameBracket: (br) => renameBracket(br, 'silver'),
     }));
   } else if (activeBracketTab === 'silver' && !t.brackets.silver) {
     container.appendChild(el('div', { class: 'empty-state' },
       el('div', { class: 'empty-icon' }, '🥈'),
       el('h3', {}, 'Consolante désactivée.')));
   }
+}
+
+// Renommer un arbre (or ou consolante)
+function renameBracket(bracket, kind) {
+  const t = store.currentTournament();
+  if (!t) return;
+  const current = bracket.title || (kind === 'gold' ? 'Tableau Or' : 'Consolante');
+  const newName = prompt('Nouveau nom pour l\'arbre :', current);
+  if (newName === null || !newName.trim()) return;
+  bracket.title = newName.trim();
+  t.updatedAt = new Date().toISOString();
+  store._save();
+  store._notify();
+  toast('Arbre renommé ✓');
+  renderKnockoutTab();
 }
 
 let modalContext = null;
@@ -844,8 +861,11 @@ function renderResultsTab() {
 
   const list = el('div', { class: 'results-list' });
   all.forEach((m) => {
-    const tA = t.teams.find((x) => x.id === m.slotA);
-    const tB = t.teams.find((x) => x.id === m.slotB);
+    // Un match peut avoir slotA/slotB (bracket) OU teamA/teamB (poule)
+    const idA = m.slotA || m.teamA;
+    const idB = m.slotB || m.teamB;
+    const tA = t.teams.find((x) => x.id === idA);
+    const tB = t.teams.find((x) => x.id === idB);
     const aWins = m.winnerSlot === 'A';
     const bWins = m.winnerSlot === 'B';
     const isThird = m.label === 'Petite finale';
