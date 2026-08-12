@@ -4,6 +4,7 @@
 
 import { store } from './state.js';
 import { renderPoule, renderBracket } from './render.js';
+import { computeStandings, splitQualifiers } from './tournament.js';
 import { $, $$, el, clear, onReady, timeAgo } from './app.js';
 
 const LS_CURRENT = 'xapi-current-public-tournament';
@@ -31,7 +32,7 @@ onReady(() => {
     });
   });
 
-  // === Sous-onglets Poules / Phase finale ===
+  // === Sous-onglets Poules / Phase finale / Classement final ===
   $$('.tab[data-viewer-subtab]').forEach((t) => {
     t.addEventListener('click', () => {
       $$('.tab[data-viewer-subtab]').forEach((x) => x.classList.remove('active'));
@@ -82,10 +83,6 @@ onReady(() => {
   updateFeedBadge();
 });
 
-/**
- * Si plusieurs tournois publics existent, on affiche un sélecteur.
- * Sinon, on n'affiche rien (le viewer pointe directement sur le seul tournoi public).
- */
 function renderTournamentSelector() {
   const container = $('#tournament-selector');
   const section = $('#tournament-selector-section');
@@ -96,22 +93,18 @@ function renderTournamentSelector() {
 
   if (publics.length === 0) {
     section.style.display = 'none';
-    // Si on a supprimé le tournoi courant côté viewer, on ne montre rien
     return;
   }
 
   if (publics.length === 1) {
-    // Un seul tournoi public : on le définit comme courant côté viewer
     setViewerCurrentTournament(publics[0].id);
     section.style.display = 'none';
     return;
   }
 
-  // Plusieurs tournois publics : on affiche le sélecteur
   section.style.display = '';
   const currentId = getViewerCurrentTournamentId();
   if (!currentId || !publics.some((t) => t.id === currentId)) {
-    // Sélectionner le premier par défaut
     setViewerCurrentTournament(publics[0].id);
   }
   const sel = getViewerCurrentTournamentId();
@@ -145,33 +138,25 @@ function setViewerCurrentTournament(id) {
   try { localStorage.setItem(LS_CURRENT, id); } catch {}
 }
 
-/**
- * Récupère le tournoi "viewer courant" :
- *  - celui choisi via le sélecteur (s'il y en a plusieurs publics)
- *  - sinon le seul tournoi public
- *  - sinon le premier tournoi non archivé
- */
 function getViewerTournament() {
   const publics = store.listPublicTournaments();
   if (publics.length === 0) {
-    // Aucun tournoi public — fallback sur le 1er non archivé
     return store.state.tournaments.find((t) => !t.archived) || store.currentTournament();
   }
   if (publics.length === 1) return publics[0];
-  // Plusieurs publics : respecter la sélection
   const sel = getViewerCurrentTournamentId();
   return publics.find((t) => t.id === sel) || publics[0];
 }
 
 function renderAll() {
   const t = getViewerTournament();
-  // Synchroniser le store (pour que renderHeader/etc utilisent le bon)
   if (t && t.id !== store.state.currentTournamentId) {
     store.state.currentTournamentId = t.id;
   }
   renderHeader(t);
   renderPoules(t);
   renderKnockout();
+  renderFinalRanking(t);
   renderHistory(t);
   renderSchedule(t);
 }
@@ -236,6 +221,161 @@ function renderKnockout() {
       el('div', { class: 'empty-icon' }, '🥈'),
       el('h3', {}, 'Pas de consolante cette fois.')));
   }
+}
+
+/**
+ * Classement final : combine poules + bracket pour donner un ordre final.
+ * Ordre de priorite :
+ *  1. Vainqueur Or
+ *  2. Finaliste Or
+ *  3. 3e Or (gagnant petite finale)
+ *  4. 4e Or (perdant petite finale)
+ *  5. Vainqueur Consolante
+ *  6. Finaliste Consolante
+ *  7. 3e Consolante
+ *  8. 4e Consolante
+ *  9. Eliminés en demi (par classement dans leur poule)
+ * 10. Eliminés en poule (par classement dans leur poule)
+ */
+function renderFinalRanking(t) {
+  const container = $('#ranking-container');
+  if (!container) return;
+  clear(container);
+  if (!t || !t.teams.length) {
+    container.appendChild(el('div', { class: 'empty-state' },
+      el('div', { class: 'empty-icon' }, '🏆'),
+      el('h3', {}, 'Aucune équipe participante.')));
+    return;
+  }
+
+  const ranked = [];
+
+  // 1. Vainqueurs / finalistes bracket
+  const placeBracket = (br, kind, baseRank) => {
+    if (!br || !br.rounds?.length) return;
+    const lastRound = br.rounds[br.rounds.length - 1];
+    const final = lastRound[0];
+    if (!final || !final.finished) return;
+    const winnerId = final.winnerSlot === 'A' ? final.slotA : final.slotB;
+    const runnerId = final.winnerSlot === 'A' ? final.slotB : final.slotA;
+    if (winnerId) ranked.push({ rank: baseRank, team: t.teams.find((x) => x.id === winnerId), label: kind === 'gold' ? '🥇 Vainqueur' : '🥇 Vainqueur Consolante' });
+    if (runnerId) ranked.push({ rank: baseRank + 1, team: t.teams.find((x) => x.id === runnerId), label: kind === 'gold' ? '🥈 Finaliste' : '🥈 Finaliste Consolante' });
+    // Petite finale
+    if (br.thirdPlaceMatch && br.thirdPlaceMatch.finished) {
+      const tpm = br.thirdPlaceMatch;
+      const w3 = tpm.winnerSlot === 'A' ? tpm.slotA : tpm.slotB;
+      const l3 = tpm.winnerSlot === 'A' ? tpm.slotB : tpm.slotA;
+      if (w3) ranked.push({ rank: baseRank + 2, team: t.teams.find((x) => x.id === w3), label: '🥉 3e' });
+      if (l3) ranked.push({ rank: baseRank + 3, team: t.teams.find((x) => x.id === l3), label: '4e' });
+    }
+  };
+
+  placeBracket(t.brackets.gold, 'gold', 1);
+  placeBracket(t.brackets.silver, 'silver', 100);
+
+  // 2. Eliminés en demi (les demi-finalistes non classés)
+  const alreadyRanked = new Set(ranked.map((r) => r.team?.id).filter(Boolean));
+  const demis = new Set();
+  if (t.brackets.gold && t.brackets.gold.rounds.length >= 2) {
+    const semis = t.brackets.gold.rounds[t.brackets.gold.rounds.length - 2];
+    semis.forEach((m) => {
+      if (m.finished) {
+        const lA = m.winnerSlot === 'A' ? m.slotB : m.slotA;
+        const lB = m.winnerSlot === 'A' ? m.slotA : m.slotB;
+        // Le perdant (non qualifie) est éliminé en demi
+        const loser = m.winnerSlot === 'A' ? m.slotB : m.slotA;
+        if (loser && !alreadyRanked.has(loser)) {
+          demis.add(loser);
+          alreadyRanked.add(loser);
+        }
+      }
+    });
+  }
+
+  // 3. Classement complet des poules (pour trier les éliminés)
+  const allStandings = [];
+  if (t.poules.length) {
+    t.poules.forEach((p, idx) => {
+      const matches = t.matches.filter((m) => m.pouleIdx === idx);
+      const standings = computeStandings(p, matches);
+      standings.forEach((s, sIdx) => {
+        if (!alreadyRanked.has(s.team.id) && !demis.has(s.team.id)) {
+          allStandings.push({ team: s.team, points: s.points, diff: s.goalDiff, scored: s.goalsFor, sIdx, pouleIdx: idx });
+        }
+      });
+    });
+  }
+
+  // 4. Classer : demis d'abord (par classement dans leur poule), puis non-qualifiés
+  const includeConsolante = t.config?.includeConsolante !== false;
+  const qualifiersPerPool = t.config?.qualifiersPerPool || 2;
+  const { gold, consolante } = t.poules.length
+    ? splitQualifiers(t.poules.map((p, idx) => computeStandings(p, t.matches.filter((m) => m.pouleIdx === idx))), qualifiersPerPool, includeConsolante)
+    : { gold: [], consolante: [] };
+  const qualifiesSet = new Set([...gold, ...consolante].map((x) => x.id));
+
+  // Demis : déjà exclus, déjà ajoutés à alreadyRanked
+  // Qualifiés non encore classés : les ajouter entre les bracket et les "éliminés en poule"
+  const qualifiedNotRanked = [];
+  const notQualified = [];
+  allStandings.forEach((s) => {
+    if (qualifiesSet.has(s.team.id)) {
+      qualifiedNotRanked.push(s);
+    } else {
+      notQualified.push(s);
+    }
+  });
+
+  // Trier chaque groupe par points, diff, scored
+  const sortF = (a, b) => {
+    if (b.points !== a.points) return b.points - a.points;
+    if (b.diff !== a.diff) return b.diff - a.diff;
+    if (b.scored !== a.scored) return b.scored - a.scored;
+    return a.team.name.localeCompare(b.team.name);
+  };
+  qualifiedNotRanked.sort(sortF);
+  notQualified.sort(sortF);
+
+  // Demis : on n'a pas leur classement dans les poules, on les classe par défaut après les qualifiés
+  // En fait un demi-finaliste a forcément été qualifié, donc il a un classement dans sa poule
+  // S'il est déjà dans ranked, ok. Sinon, c'est qu'il n'a pas été trouvé dans le bracket (pas joué).
+
+  // Construire le classement final
+  const final = [...ranked];
+  let nextRank = ranked.length > 0 ? Math.max(...ranked.map((r) => r.rank)) + 1 : 1;
+  qualifiedNotRanked.forEach((s) => {
+    final.push({ rank: nextRank++, team: s.team, label: 'Qualifié non classé' });
+  });
+  notQualified.forEach((s) => {
+    final.push({ rank: nextRank++, team: s.team, label: 'Éliminé en poule' });
+  });
+
+  // Render
+  container.appendChild(el('h2', { style: { marginTop: '0' } }, '🏆 Classement final'));
+  container.appendChild(el('p', { class: 'muted' }, 'Combinaison des phases de poules et des phases finales.'));
+
+  const table = el('table', { class: 'standings-table final-ranking-table' });
+  table.appendChild(el('thead', {}, el('tr', {},
+    el('th', { style: { width: '60px' } }, '#'),
+    el('th', { style: { textAlign: 'left' } }, 'Équipe'),
+    el('th', { style: { textAlign: 'left' } }, 'Statut'),
+  )));
+  const tb = el('tbody');
+  final.forEach((r) => {
+    if (!r.team) return;
+    const medal = r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : r.rank === 3 ? '🥉' : '';
+    const tr = el('tr', { class: r.rank <= 4 ? 'final-podium' : '' },
+      el('td', { class: 'rank-cell', style: { fontWeight: 700, fontSize: '1.1em' } }, medal ? `${medal} ${r.rank}` : String(r.rank)),
+      el('td', { class: 'team-cell' },
+        el('span', { class: 'team-color', style: { background: r.team.color } }),
+        r.team.name,
+      ),
+      el('td', { class: 'muted' }, r.label),
+    );
+    tb.appendChild(tr);
+  });
+  table.appendChild(tb);
+  container.appendChild(table);
 }
 
 function renderHistory(t) {
@@ -351,14 +491,12 @@ function renderSchedule(t) {
   });
 }
 
-// Badge : compteur de nouveaux events
 function updateFeedBadge() {
   const aside = $('#live-feed-aside');
   const badge = $('#live-feed-toggle-badge');
   if (!badge) return;
   const t = getViewerTournament();
   const items = t?.history || [];
-  // Compteur de différence par rapport au render précédent
   const prev = parseInt(badge.dataset.prev || '0', 10);
   if (items.length > prev) {
     const newCount = items.length - prev;

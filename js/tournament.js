@@ -422,27 +422,42 @@ function scheduleDay(matches, { nbTerrains, matchDurationMin, breakBetweenMin, l
   const dayStart = parseTime(startTime);
   const dayEnd = parseTime(endTime);
   const out = [];
-  let slotIdx = 0;
+  // Grouper les matchs en "rounds" : 1 round = jusqu'a nbTerrains matchs joues en parallele
+  // Contrainte : pas 2 fois la meme equipe dans un round
+  const remaining = [...matches.map((m, idx) => ({ ...m, _idx: idx }))];
+  const rounds = [];
+  while (remaining.length > 0) {
+    const round = [];
+    const usedTeams = new Set();
+    for (let i = 0; i < remaining.length && round.length < nbTerrains; ) {
+      const m = remaining[i];
+      if (m.teamA && usedTeams.has(m.teamA)) { i++; continue; }
+      if (m.teamB && usedTeams.has(m.teamB)) { i++; continue; }
+      if ((m.teamA && m.teamB && m.teamA === m.teamB)) { i++; continue; }
+      // Equipes pretes
+      round.push(remaining.splice(i, 1)[0]);
+      if (m.teamA) usedTeams.add(m.teamA);
+      if (m.teamB) usedTeams.add(m.teamB);
+    }
+    if (round.length === 0) {
+      // Pas pu placer ce match dans ce round (equipes deja lockees).
+      // On le tente quand meme pour eviter la boucle infinie.
+      round.push(remaining.shift());
+    }
+    rounds.push(round);
+  }
   let currentTime = dayStart;
-
-  // Groupe les matchs en créneaux de `nbTerrains` matchs simultanés.
-  // Chaque créneau = 1 match par terrain, tous en même temps.
-  const nbSlots = Math.ceil(matches.length / nbTerrains);
-  for (let s = 0; s < nbSlots; s++) {
-    // Pause déj à 12h30 (midi + 30 min)
+  let slotIdx = 0;
+  for (const round of rounds) {
     const minutes = Math.floor(currentTime / 60);
     const lunchTrigger = 12 * 60 + 30;
     if (minutes >= lunchTrigger && minutes < lunchTrigger + lunchBreakMin) {
       currentTime = lunchTrigger + lunchBreakMin;
     }
-    // Fin de journée : stop (on n'ajoute plus de créneau, mais l'admin pourra éditer)
     if (currentTime + matchDurationMin > dayEnd) break;
-
-    for (let t = 0; t < nbTerrains; t++) {
-      const matchIdx = s * nbTerrains + t;
-      if (matchIdx >= matches.length) break;
+    for (let t = 0; t < round.length; t++) {
       out.push({
-        matchId: matches[matchIdx].id,
+        matchId: round[t].id,
         date,
         time: minutesToTime(currentTime),
         terrain: t + 1,

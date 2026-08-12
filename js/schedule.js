@@ -1,5 +1,5 @@
 /* ================================================================
-   SCHEDULE.JS — Page planning global (centree TERRAINS + multi-tournois)
+   SCHEDULE.JS — Page planning global (centree TERRAINS + multi-tournois + multi-jours)
    ================================================================ */
 
 import { store } from './state.js';
@@ -14,31 +14,62 @@ import { isAuthenticated, renderLoginScreen, bindLogoutButton } from './auth.js'
 let editingSlot = null;
 
 const GLOBAL_CONFIG_KEY = 'xapi-cup-schedule-config-v1';
+const DEFAULT_CONFIG = {
+  nbTerrains: 4,
+  matchDurationMin: 20,
+  breakBetweenMin: 5,
+  startTime: '09:00',
+  endTime: '18:00',
+  splitDays: false,
+  days: [], // [{date, startTime, endTime}]
+};
+
 function getGlobalConfig() {
   try {
     const raw = localStorage.getItem(GLOBAL_CONFIG_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
   } catch (e) {}
-  return {
-    nbTerrains: 2,
-    matchDurationMin: 20,
-    breakBetweenMin: 5,
-    startTime: '09:00',
-    endTime: '18:00',
-  };
+  return { ...DEFAULT_CONFIG };
 }
 function saveGlobalConfig(cfg) {
   localStorage.setItem(GLOBAL_CONFIG_KEY, JSON.stringify(cfg));
   toast('Config sauvegardée.', 'success');
 }
+function resetConfig() {
+  localStorage.removeItem(GLOBAL_CONFIG_KEY);
+  toast('Config réinitialisée.', 'info');
+}
 function readConfigFromInputs() {
   return {
-    nbTerrains: parseInt($('#nb-terrains').value, 10) || 2,
+    nbTerrains: parseInt($('#nb-terrains').value, 10) || 4,
     matchDurationMin: parseInt($('#match-duration').value, 10) || 20,
     breakBetweenMin: parseInt($('#break-between').value, 10) || 5,
     startTime: $('#start-time').value || '09:00',
     endTime: $('#end-time').value || '18:00',
+    splitDays: $('#toggle-multidays').checked,
+    days: readDaysFromInputs(),
   };
+}
+function readDaysFromInputs() {
+  if (!$('#toggle-multidays').checked) return [];
+  const nb = parseInt($('#nb-days').value, 10) || 1;
+  const startDate = $('#start-date').value;
+  const days = [];
+  const baseStart = $('#start-time').value || '09:00';
+  const baseEnd = $('#end-time').value || '18:00';
+  for (let i = 0; i < nb; i++) {
+    const d = $(`#day-${i}-date`)?.value
+      || (startDate ? addDays(startDate, i) : null);
+    const s = $(`#day-${i}-start`)?.value || baseStart;
+    const e = $(`#day-${i}-end`)?.value || baseEnd;
+    days.push({ date: d, startTime: s, endTime: e });
+  }
+  return days;
+}
+function addDays(dateStr, n) {
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
 }
 function renderConfigInputs() {
   const cfg = getGlobalConfig();
@@ -48,6 +79,41 @@ function renderConfigInputs() {
   setVal('break-between', cfg.breakBetweenMin);
   setVal('start-time', cfg.startTime);
   setVal('end-time', cfg.endTime);
+  const tg = $('#toggle-multidays');
+  if (tg) tg.checked = !!cfg.splitDays;
+  toggleDaysConfig();
+  renderDaysList();
+}
+function toggleDaysConfig() {
+  const tg = $('#toggle-multidays');
+  const dc = $('#days-config');
+  if (tg && dc) dc.style.display = tg.checked ? 'block' : 'none';
+}
+function renderDaysList() {
+  const list = $('#days-list');
+  if (!list) return;
+  clear(list);
+  if (!$('#toggle-multidays').checked) return;
+  const nb = parseInt($('#nb-days').value, 10) || 1;
+  const startDate = $('#start-date').value || new Date().toISOString().slice(0,10);
+  const baseStart = $('#start-time').value || '09:00';
+  const baseEnd = $('#end-time').value || '18:00';
+  const cfg = getGlobalConfig();
+  for (let i = 0; i < nb; i++) {
+    const existing = cfg.days?.[i];
+    const row = el('div', { class: 'form-row', style: { marginBottom: '8px', alignItems: 'end' } },
+      el('div', { class: 'form-group', style: { flex: 1 } },
+        el('label', {}, `Jour ${i + 1}`),
+        el('input', { type: 'date', class: 'input', id: `day-${i}-date`, value: existing?.date || addDays(startDate, i) })),
+      el('div', { class: 'form-group', style: { flex: 1 } },
+        el('label', {}, 'Début'),
+        el('input', { type: 'time', class: 'input', id: `day-${i}-start`, value: existing?.startTime || baseStart })),
+      el('div', { class: 'form-group', style: { flex: 1 } },
+        el('label', {}, 'Fin'),
+        el('input', { type: 'time', class: 'input', id: `day-${i}-end`, value: existing?.endTime || baseEnd })),
+    );
+    list.appendChild(row);
+  }
 }
 
 // ================================================================
@@ -74,18 +140,35 @@ function bindUI() {
     cfg.style.display = cfg.style.display === 'none' ? 'block' : 'none';
   });
 
+  // Toggle multi-days
+  $('#toggle-multidays')?.addEventListener('change', () => {
+    toggleDaysConfig();
+    renderDaysList();
+  });
+  $('#nb-days')?.addEventListener('change', renderDaysList);
+  $('#start-date')?.addEventListener('change', renderDaysList);
+
   // Sauvegarder config
-  $('#save-global-config-btn')?.addEventListener('click', () => {
+  $('#save-config-btn')?.addEventListener('click', () => {
     const cfg = readConfigFromInputs();
     saveGlobalConfig(cfg);
-    // Propager a tous les tournois
     store.setCurrent((s) => {
       s.config.nbTerrains = cfg.nbTerrains;
       s.config.matchDurationMin = cfg.matchDurationMin;
       s.config.breakBetweenMin = cfg.breakBetweenMin;
       s.config.startTime = cfg.startTime;
       s.config.endTime = cfg.endTime;
+      s.config.splitDays = cfg.splitDays;
+      s.config.days = cfg.days;
     });
+    renderScheduleView();
+  });
+
+  // Reset config
+  $('#reset-config-btn')?.addEventListener('click', () => {
+    if (!confirm('Réinitialiser la config aux valeurs par défaut ?')) return;
+    resetConfig();
+    renderConfigInputs();
     renderScheduleView();
   });
 
@@ -139,13 +222,12 @@ function renderTerrainView() {
   const container = $('#global-schedule-container');
   const ts = store.listTournaments().filter((t) => !t.archived);
 
-  // === Collecte globale ===
   const allSchedules = [];
   const allMatches = new Map();
   const teamsByTour = new Map();
   const cfg = getGlobalConfig();
   const nbTerrains = Math.max(
-    cfg.nbTerrains || 8,
+    cfg.nbTerrains || 4,
     ...ts.flatMap((t) => (t.schedule || []).map((s) => s.terrain))
   );
 
@@ -158,13 +240,12 @@ function renderTerrainView() {
     teamsByTour.set(t.id, t.teams);
   });
 
-  // === Stats ===
   const stats = $('#toolbar-stats');
   if (stats) {
     stats.textContent = `${allSchedules.length} créneau${allSchedules.length > 1 ? 'x' : ''} planifié${allSchedules.length > 1 ? 's' : ''} · ${ts.length} tournoi${ts.length > 1 ? 's' : ''}`;
   }
 
-  // === Conflits ===
+  // Conflits
   const conflicts = detectAllConflicts(allSchedules, [...allMatches.values()], [...teamsByTour.values()].flat());
   const totalConflicts = conflicts.terrain.length + conflicts.equipe.length;
   const conflictPanel = $('#conflict-panel');
@@ -181,7 +262,6 @@ function renderTerrainView() {
     }
   }
 
-  // === Tableau principal ===
   if (allSchedules.length === 0) {
     container.appendChild(el('div', { class: 'empty-state' },
       el('div', { class: 'empty-icon' }, '📅'),
@@ -190,7 +270,6 @@ function renderTerrainView() {
     return;
   }
 
-  // Group par date puis par créneau (date+time)
   const byDate = new Map();
   allSchedules.forEach((s) => {
     if (!byDate.has(s.date)) byDate.set(s.date, new Map());
@@ -255,7 +334,13 @@ function generateAllSchedules(ts, cfg) {
         ...(t.bracketMatches || []),
       ];
       if (!allMatches.length) return;
-      const newSched = generateSchedule(allMatches, cfg);
+      // Construire la config finale du tournoi (splitDays + days prioritaires)
+      const matchCfg = {
+        ...cfg,
+        splitDays: cfg.splitDays && cfg.days?.length > 0,
+        days: cfg.days || [],
+      };
+      const newSched = generateSchedule(allMatches, matchCfg);
       t.schedule = newSched;
       t.config = { ...(t.config || {}), nbTerrains: cfg.nbTerrains };
       totalAdded += newSched.length;

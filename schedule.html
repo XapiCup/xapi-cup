@@ -48,11 +48,12 @@
     <!-- Config (collapse) -->
     <section class="card config-card" id="schedule-config" style="display: none;">
       <h2>⚙️ Configuration du planning</h2>
-      <p class="muted">Ces paramètres s'appliquent à la génération.</p>
+      <p class="muted">Ces paramètres s'appliquent à la génération globale.</p>
       <div class="form-row">
         <div class="form-group">
           <label for="nb-terrains">Nombre de terrains</label>
-          <input type="number" id="nb-terrains" class="input" min="1" max="20" value="2" />
+          <input type="number" id="nb-terrains" class="input" min="1" max="20" value="4" />
+          <small class="muted">Combien de terrains en parallèle</small>
         </div>
         <div class="form-group">
           <label for="match-duration">Durée d'un match (min)</label>
@@ -70,6 +71,29 @@
           <label for="end-time">Heure de fin</label>
           <input type="time" id="end-time" class="input" value="18:00" />
         </div>
+      </div>
+      <div class="form-row" style="margin-top: 16px; align-items: center;">
+        <label class="switch">
+          <input type="checkbox" id="toggle-multidays" />
+          <span>📅 Étaler sur plusieurs jours</span>
+        </label>
+      </div>
+      <div id="days-config" style="display: none;">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Nb jours</label>
+            <input type="number" id="nb-days" class="input" min="1" max="7" value="1" />
+          </div>
+          <div class="form-group">
+            <label>Date de début</label>
+            <input type="date" id="start-date" class="input" />
+          </div>
+        </div>
+        <div id="days-list"></div>
+      </div>
+      <div class="form-row" style="margin-top: 16px;">
+        <button class="btn btn-primary" id="save-config-btn">💾 Sauvegarder la config</button>
+        <button class="btn btn-ghost" id="reset-config-btn" style="background: var(--color-surface-2); color: var(--color-text); border: 1px solid var(--color-border);">♻️ Reset</button>
       </div>
     </section>
 
