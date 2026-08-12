@@ -216,42 +216,7 @@ function bindUI() {
     });
   });
 
-  // ===== Onglet Planning =====
-  $('#generate-schedule-btn')?.addEventListener('click', generateScheduleForCurrent);
-  $('#export-schedule-btn')?.addEventListener('click', exportScheduleAsImage);
-  $('#toggle-split-days')?.addEventListener('change', (e) => {
-    store.setCurrent((s) => { s.config.splitDays = e.target.checked; });
-    renderScheduleConfig();
-  });
-  $('#add-day-btn')?.addEventListener('click', () => {
-    store.setCurrent((s) => {
-      const nextDate = new Date();
-      nextDate.setDate(nextDate.getDate() + (s.config.days?.length || 0));
-      s.config.days = s.config.days || [];
-      s.config.days.push({ date: nextDate.toISOString().slice(0,10), startTime: '09:00', endTime: '18:00' });
-    });
-    renderScheduleConfig();
-  });
-  $('#schedule-public-visible')?.addEventListener('change', (e) => {
-    store.setCurrent((s) => { s.config.schedulePublic = e.target.checked; });
-    toast(e.target.checked ? 'Planning visible côté public.' : 'Planning caché côté public.', 'info');
-  });
-  ['nb-terrains','match-duration','break-between','lunch-break','start-time','end-time'].forEach((id) => {
-    const map = { 'nb-terrains': 'nbTerrains', 'match-duration': 'matchDurationMin', 'break-between': 'breakBetweenMin', 'lunch-break': 'lunchBreakMin', 'start-time': 'startTime', 'end-time': 'endTime' };
-    const field = map[id];
-    $(`#${id}`)?.addEventListener('change', (e) => {
-      const v = (id === 'start-time' || id === 'end-time') ? e.target.value : parseInt(e.target.value, 10);
-      store.setCurrent((s) => { s.config[field] = v; });
-    });
-  });
-  $$('.tab[data-schedule-tab]').forEach((t) => {
-    t.addEventListener('click', () => {
-      $$('.tab[data-schedule-tab]').forEach((x) => x.classList.remove('active'));
-      t.classList.add('active');
-      activeScheduleTab = t.dataset.scheduleTab;
-      renderScheduleTab();
-    });
-  });
+  // ===== Onglet Résultats : listener géré par renderResultsTab() =====
 
   // ===== Onglet Export =====
   $('#export-btn')?.addEventListener('click', handleExportImage);
@@ -282,12 +247,8 @@ function bindUI() {
   });
   $('#modal-save')?.addEventListener('click', saveBracketModal);
 
-  // ===== Modal planning =====
-  $('#se-cancel')?.addEventListener('click', closeScheduleEditModal);
-  $('#schedule-edit-modal')?.addEventListener('click', (e) => {
-    if (e.target.id === 'schedule-edit-modal') closeScheduleEditModal();
-  });
-  $('#se-save')?.addEventListener('click', saveScheduleEditModal);
+  // (Modale planning supprimée — déplacée sur la page schedule.html)
+
 }
 
 function bindDashboardUI() {
@@ -492,7 +453,7 @@ function renderTournamentTab(tab) {
     case 'teams': renderTeamsTab(); break;
     case 'poules': renderPoulesTab(); break;
     case 'knockout': renderKnockoutTab(); break;
-    case 'schedule': renderScheduleTab(); break;
+    case 'results': renderResultsTab(); break;
     case 'history': renderHistoryTab(); break;
     case 'export': renderExportTab(); break;
   }
@@ -732,27 +693,35 @@ function renderKnockoutTab() {
 
 let modalContext = null;
 function openBracketModal(match, rIdx, mIdx) {
-  if (match.slotA == null || match.slotB == null) {
-    toast('Les deux équipes ne sont pas encore déterminées.', 'warn');
-    return;
+  // Petite finale : match.isThirdPlace === true
+  if (match.isThirdPlace) {
+    if (match.slotA == null || match.slotB == null) {
+      toast('Les perdants des demi-finales ne sont pas encore déterminés.', 'warn');
+      return;
+    }
+  } else {
+    if (match.slotA == null || match.slotB == null) {
+      toast('Les deux équipes ne sont pas encore déterminées.', 'warn');
+      return;
+    }
   }
-  modalContext = { kind: activeBracketTab, rIdx, mIdx, match };
+  modalContext = { kind: activeBracketTab, rIdx, mIdx, match, isThirdPlace: !!match.isThirdPlace };
   const t = store.currentTournament();
   const tA = t.teams.find((x) => x.id === match.slotA);
   const tB = t.teams.find((x) => x.id === match.slotB);
-  $('#modal-title').textContent = `${tA.name} vs ${tB.name}`;
+  $('#modal-title').textContent = (match.isThirdPlace ? '🥉 Petite finale : ' : '') + `${tA?.name || '?'} vs ${tB?.name || '?'}`;
   const body = $('#modal-body');
   clear(body);
   const row = el('div', { class: 'form-row', style: { alignItems: 'end' } });
   row.appendChild(el('div', { class: 'form-group', style: { flex: 1 } },
-    el('label', {}, tA.name),
+    el('label', {}, tA?.name || '?'),
     el('input', { type: 'number', min: '0', class: 'input', id: 'modal-scoreA', value: match.scoreA ?? 0 })));
   row.appendChild(el('div', { class: 'form-group', style: { flex: 1 } },
-    el('label', {}, tB.name),
+    el('label', {}, tB?.name || '?'),
     el('input', { type: 'number', min: '0', class: 'input', id: 'modal-scoreB', value: match.scoreB ?? 0 })));
   body.appendChild(row);
-  body.appendChild(el('p', { class: 'help' }, 'Saisis les scores. Vainqueur désigné automatiquement.'));
-  $('#modal-save').textContent = 'Valider le vainqueur';
+  body.appendChild(el('p', { class: 'help' }, match.isThirdPlace ? 'Match pour la 3e place.' : 'Saisis les scores. Vainqueur désigné automatiquement.'));
+  $('#modal-save').textContent = 'Valider le score';
   $('#bracket-modal').classList.add('show');
   $('#modal-scoreA').focus(); $('#modal-scoreA').select();
 }
@@ -765,7 +734,32 @@ function saveBracketModal() {
   const scoreA = parseInt($('#modal-scoreA').value, 10);
   const scoreB = parseInt($('#modal-scoreB').value, 10);
   if (isNaN(scoreA) || isNaN(scoreB) || scoreA < 0 || scoreB < 0) { toast('Scores invalides.', 'warn'); return; }
-  const { kind, rIdx, mIdx } = modalContext;
+  const { kind, rIdx, mIdx, isThirdPlace } = modalContext;
+
+  // Petite finale : cas spécial
+  if (isThirdPlace) {
+    store.setCurrent((s) => {
+      const br = s.brackets[kind];
+      const m = br.thirdPlaceMatch;
+      m.scoreA = scoreA; m.scoreB = scoreB;
+      if (scoreA > scoreB) m.winnerSlot = 'A';
+      else if (scoreB > scoreA) m.winnerSlot = 'B';
+      else m.winnerSlot = null;
+      m.finished = m.winnerSlot != null;
+      m.finishedAt = new Date().toISOString();
+      const tA = s.teams.find((x) => x.id === m.slotA);
+      const tB = s.teams.find((x) => x.id === m.slotB);
+      s.history.push({
+        at: m.finishedAt, type: 'match-finished',
+        label: `🥉 Petite finale : ${tA?.name || '?'} ${scoreA}-${scoreB} ${tB?.name || '?'}`,
+        data: { matchId: m.id, kind: 'third-place' }
+      });
+    });
+    closeBracketModal();
+    toast('Petite finale enregistrée.', 'success');
+    return;
+  }
+
   let winner = null;
   if (scoreA > scoreB) winner = 'A';
   else if (scoreB > scoreA) winner = 'B';
@@ -782,17 +776,26 @@ function saveBracketModal() {
     m.scoreA = scoreA; m.scoreB = scoreB;
     m.winnerSlot = winner; m.finished = true;
     m.finishedAt = new Date().toISOString();
-    const updated = setBracketScore(br, rIdx, mIdx, scoreA, scoreB);
-    updated.rounds[rIdx][mIdx].winnerSlot = winner;
-    updated.rounds[rIdx][mIdx].finished = true;
-    const winnerId = winner === 'A' ? m.slotA : m.slotB;
-    if (rIdx < updated.rounds.length - 1) {
-      const nextRound = updated.rounds[rIdx + 1];
-      const nextMatch = nextRound[Math.floor(mIdx / 2)];
-      if (mIdx % 2 === 0) nextMatch.slotA = winnerId;
-      else nextMatch.slotB = winnerId;
+    // Propagation manuelle (mêmes règles que setBracketScore mais aussi la petite finale)
+    for (let r = 0; r < br.rounds.length - 1; r++) {
+      const round = br.rounds[r];
+      round.forEach((match, mi) => {
+        if (!match.finished) return;
+        const winnerId = match.winnerSlot === 'A' ? match.slotA : match.slotB;
+        if (!winnerId) return;
+        const nextMatch = br.rounds[r + 1][match.nextMatchIdx];
+        if (match.nextSlot === 'A') nextMatch.slotA = winnerId;
+        else nextMatch.slotB = winnerId;
+      });
     }
-    s.brackets[kind] = updated;
+    // Petite finale
+    if (br.thirdPlaceMatch && br.rounds.length >= 2) {
+      const semis = br.rounds[br.rounds.length - 2];
+      if (semis.length >= 2 && semis[0].finished && semis[1].finished) {
+        br.thirdPlaceMatch.slotA = semis[0].winnerSlot === 'A' ? semis[0].slotB : semis[0].slotA;
+        br.thirdPlaceMatch.slotB = semis[1].winnerSlot === 'A' ? semis[1].slotB : semis[1].slotA;
+      }
+    }
     const tA = s.teams.find((x) => x.id === m.slotA);
     const tB = s.teams.find((x) => x.id === m.slotB);
     s.history.push({
@@ -806,208 +809,73 @@ function saveBracketModal() {
 }
 
 // ================================================================
-// PLANNING
+// RÉSULTATS (vue synthétique des matchs terminés)
 // ================================================================
-function renderScheduleConfig() {
-  const t = store.currentTournament();
-  if (!t) return;
-  const cfg = t.config;
-  const setVal = (id, v) => { const e = $(`#${id}`); if (e) e.value = v; };
-  setVal('nb-terrains', cfg.nbTerrains);
-  setVal('match-duration', cfg.matchDurationMin);
-  setVal('break-between', cfg.breakBetweenMin);
-  setVal('lunch-break', cfg.lunchBreakMin);
-  setVal('start-time', cfg.startTime);
-  setVal('end-time', cfg.endTime);
-  setVal('toggle-split-days', cfg.splitDays);
-  setVal('schedule-public-visible', cfg.schedulePublic);
-
-  const daysContainer = $('#days-container');
-  if (daysContainer) {
-    clear(daysContainer);
-    if (cfg.splitDays) {
-      $('#add-day-row').style.display = '';
-      cfg.days = cfg.days || [];
-      cfg.days.forEach((day, idx) => {
-        const row = el('div', { class: 'form-row', style: { marginBottom: '8px', alignItems: 'end' } },
-          el('div', { class: 'form-group', style: { flex: 1 } },
-            el('label', {}, `Jour ${idx + 1}`),
-            el('input', { type: 'date', class: 'input', value: day.date,
-              onchange: (e) => store.setCurrent((s) => { s.config.days[idx].date = e.target.value; }) })),
-          el('div', { class: 'form-group', style: { flex: 1 } },
-            el('label', {}, 'Début'),
-            el('input', { type: 'time', class: 'input', value: day.startTime,
-              onchange: (e) => store.setCurrent((s) => { s.config.days[idx].startTime = e.target.value; }) })),
-          el('div', { class: 'form-group', style: { flex: 1 } },
-            el('label', {}, 'Fin'),
-            el('input', { type: 'time', class: 'input', value: day.endTime,
-              onchange: (e) => store.setCurrent((s) => { s.config.days[idx].endTime = e.target.value; }) })),
-          el('div', { class: 'form-group', style: { flex: 0 } },
-            el('button', { class: 'btn btn-sm btn-danger',
-              onclick: () => store.setCurrent((s) => { s.config.days.splice(idx, 1); renderScheduleConfig(); })
-            }, '🗑️'))
-        );
-        daysContainer.appendChild(row);
-      });
-    } else {
-      $('#add-day-row').style.display = 'none';
-    }
-  }
-}
-
-function renderScheduleTab() {
-  const t = store.currentTournament();
-  if (!t) return;
-  renderScheduleConfig();
-  const container = $('#schedule-container');
+function renderResultsTab() {
+  const container = $('#results-container');
   if (!container) return;
   clear(container);
+  const t = store.currentTournament();
+  if (!t) return;
 
-  if (!t.poules.length && !t.brackets.gold) {
+  // Matchs terminés (poules + bracket + petite finale)
+  const finishedPoules = t.matches.filter((m) => m.finished);
+  const finishedBrackets = (t.bracketMatches || []).filter((m) => m.finished);
+  const finishedThird = [];
+  if (t.brackets.gold?.thirdPlaceMatch?.finished) finishedThird.push(t.brackets.gold.thirdPlaceMatch);
+  if (t.brackets.silver?.thirdPlaceMatch?.finished) finishedThird.push(t.brackets.silver.thirdPlaceMatch);
+  const all = [...finishedPoules, ...finishedBrackets, ...finishedThird];
+
+  if (!all.length) {
     container.appendChild(el('div', { class: 'empty-state' },
-      el('div', { class: 'empty-icon' }, '📅'),
-      el('h3', {}, 'Aucun match à planifier pour l\'instant.'),
-      el('p', {}, 'Génère d\'abord les poules ou les arbres.')));
+      el('div', { class: 'empty-icon' }, '📋'),
+      el('h3', {}, 'Aucun résultat pour l\'instant.'),
+      el('p', {}, 'Les matchs terminés apparaîtront ici.')));
     return;
   }
 
-  // Tabs : poules / phase finale
-  const tabNav = el('div', { class: 'tabs' },
-    el('button', { class: 'tab' + (activeScheduleTab === 'poules' ? ' active' : ''),
-      onclick: () => { activeScheduleTab = 'poules'; renderScheduleTab(); }
-    }, `📋 Poules (${t.matches.length})`),
-    el('button', { class: 'tab' + (activeScheduleTab === 'knockout' ? ' active' : ''),
-      onclick: () => { activeScheduleTab = 'knockout'; renderScheduleTab(); }
-    }, `🏆 Phase finale (${t.bracketMatches?.length || 0})`));
-  container.appendChild(tabNav);
+  // Tri par date de fin décroissante
+  all.sort((a, b) => (b.finishedAt || '').localeCompare(a.finishedAt || ''));
 
-  const sourceMatches = activeScheduleTab === 'poules' ? t.matches : (t.bracketMatches || []);
-  const alreadyScheduled = t.schedule.filter((s) => sourceMatches.some((m) => m.id === s.matchId));
+  const list = el('div', { class: 'results-list' });
+  all.forEach((m) => {
+    const tA = t.teams.find((x) => x.id === m.slotA);
+    const tB = t.teams.find((x) => x.id === m.slotB);
+    const aWins = m.winnerSlot === 'A';
+    const bWins = m.winnerSlot === 'B';
+    const isThird = m.label === 'Petite finale';
+    const d = new Date(m.finishedAt || Date.now());
 
-  if (!sourceMatches.length) {
-    container.appendChild(el('div', { class: 'empty-state' },
-      el('p', {}, 'Pas de matchs dans cette catégorie.')));
-    return;
-  }
-
-  if (alreadyScheduled.length) {
-    container.appendChild(renderScheduleTable(alreadyScheduled, sourceMatches, t));
-    container.appendChild(el('p', { class: 'schedule-edit-hint' },
-      '💡 Clique sur un créneau pour modifier son heure ou son terrain.'));
-    const conflicts = detectScheduleConflicts(alreadyScheduled, sourceMatches, t.teams);
-    if (conflicts.length) {
-      container.appendChild(el('div', { class: 'alert alert-warn', style: { marginTop: '12px' } },
-        el('strong', {}, '⚠ ' + conflicts.length + ' conflit(s)'),
-        el('ul', { style: { marginTop: '8px' } },
-          ...conflicts.map((c) => el('li', {}, `${c.team} — ${c.reason}`))
-        )));
-    }
-  } else {
-    container.appendChild(el('div', { class: 'empty-state' },
-      el('p', {}, 'Aucun planning généré pour cette catégorie. Clique sur "Générer le planning" ci-dessus.')));
-  }
-}
-
-function renderScheduleTable(schedule, matches, t) {
-  const table = el('table', { class: 'schedule-table' });
-  table.appendChild(el('thead', {}, el('tr', {},
-    el('th', {}, 'Date'),
-    el('th', {}, 'Heure'),
-    el('th', {}, 'Terrain'),
-    el('th', {}, 'Match'),
-    el('th', {}, 'Score'),
-  )));
-  const tb = el('tbody');
-  const matchById = new Map(matches.map((m) => [m.id, m]));
-  const sorted = [...schedule].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
-  sorted.forEach((s) => {
-    const m = matchById.get(s.matchId);
-    if (!m) return;
-    const tA = t.teams.find((x) => x.id === m.teamA);
-    const tB = t.teams.find((x) => x.id === m.teamB);
-    const tr = el('tr', {
-      class: 'editable',
-      title: 'Cliquer pour modifier',
-      onclick: () => openScheduleEditModal(s),
-    });
-    tr.appendChild(el('td', {}, s.date));
-    tr.appendChild(el('td', { style: { fontWeight: 600 } }, s.time));
-    tr.appendChild(el('td', {}, el('span', { class: 'terrain-badge' }, '🟢 T' + s.terrain)));
-    tr.appendChild(el('td', {}, (tA?.name || '?') + ' vs ' + (tB?.name || '?')));
-    tr.appendChild(el('td', { class: 'text-center', style: { fontWeight: 600 } },
-      (m.scoreA != null ? m.scoreA : '-') + ' - ' + (m.scoreB != null ? m.scoreB : '-')));
-    tb.appendChild(tr);
+    list.appendChild(el('div', {
+      class: 'result-item'
+        + (aWins ? ' winner-a' : '')
+        + (bWins ? ' winner-b' : '')
+        + (isThird ? ' third-place' : '')
+    },
+      isThird ? el('div', { class: 'result-label' }, '🥉 Petite finale')
+             : (m.pouleIdx != null ? el('div', { class: 'result-label' },
+                `Poule ${String.fromCharCode(65 + m.pouleIdx)} · `,
+                el('span', { class: 'muted' }, `Match ${(m.matchIdx || 0) + 1}`))
+                                   : el('div', { class: 'result-label' }, '🏆 Phase finale')),
+      el('div', { class: 'result-score' },
+        el('span', { class: 'result-team' + (aWins ? ' winner' : '') }, tA?.name || '?'),
+        el('span', { class: 'result-numbers' },
+          el('span', {}, String(m.scoreA ?? '-')),
+          el('span', { class: 'dash' }, ' - '),
+          el('span', {}, String(m.scoreB ?? '-'))),
+        el('span', { class: 'result-team' + (bWins ? ' winner' : '') }, tB?.name || '?')
+      ),
+      el('div', { class: 'result-time muted' }, d.toLocaleString('fr-FR')),
+    ));
   });
-  table.appendChild(tb);
-  return table;
-}
+  container.appendChild(list);
 
-function generateScheduleForCurrent() {
-  const t = store.currentTournament();
-  if (!t) return;
-  const which = activeScheduleTab;
-  const sourceMatches = which === 'poules' ? t.matches : (t.bracketMatches || []);
-  if (!sourceMatches.length) { toast('Aucun match à planifier.', 'warn'); return; }
-  const newSched = generateSchedule(sourceMatches, t.config);
-  store.setCurrent((s) => {
-    const sourceIds = new Set(sourceMatches.map((m) => m.id));
-    s.schedule = s.schedule.filter((sc) => !sourceIds.has(sc.matchId));
-    s.schedule.push(...newSched);
-    s.history.push({
-      at: new Date().toISOString(), type: 'schedule-generated',
-      label: `Planning généré : ${newSched.length} matchs sur ${which === 'poules' ? 'les poules' : 'la phase finale'}`,
-    });
-  });
-  toast(`Planning généré : ${newSched.length} matchs.`, 'success');
-  renderScheduleTab();
-}
-
-async function exportScheduleAsImage() {
-  const t = store.currentTournament();
-  if (!t) return;
-  const el2 = $('#schedule-container');
-  if (!el2) return;
-  try {
-    await exportElementAsImage(el2, `xapi-cup-${slugify(t.name)}-planning`, 'png', 2);
-    toast('Planning exporté !', 'success');
-  } catch (e) {
-    toast('Erreur : ' + e.message, 'danger');
-  }
-}
-
-// ---- Modal d'édition d'un créneau ----
-function openScheduleEditModal(slot) {
-  editingSlot = slot;
-  $('#se-date').value = slot.date;
-  $('#se-time').value = slot.time;
-  $('#se-terrain').value = slot.terrain;
-  $('#se-error').innerHTML = '';
-  $('#schedule-edit-modal').classList.add('show');
-}
-function closeScheduleEditModal() {
-  $('#schedule-edit-modal').classList.remove('show');
-  editingSlot = null;
-}
-function saveScheduleEditModal() {
-  if (!editingSlot) return;
-  const date = $('#se-date').value;
-  const time = $('#se-time').value;
-  const terrain = parseInt($('#se-terrain').value, 10);
-  const err = $('#se-error');
-  err.innerHTML = '';
-  if (!date || !time) { err.innerHTML = '<div class="alert alert-danger" style="margin-top:8px;">Date et heure requises.</div>'; return; }
-  if (isNaN(terrain) || terrain < 1) { err.innerHTML = '<div class="alert alert-danger" style="margin-top:8px;">Terrain invalide.</div>'; return; }
-  store.setCurrent((s) => {
-    const sc = s.schedule.find((x) => x.matchId === editingSlot.matchId);
-    if (sc) {
-      sc.date = date; sc.time = time; sc.terrain = terrain;
-      s.history.push({ at: new Date().toISOString(), type: 'schedule-edited',
-        label: `Créneau modifié : ${date} ${time} T${terrain}` });
-    }
-  });
-  closeScheduleEditModal();
-  toast('Créneau modifié.', 'success');
-  renderScheduleTab();
+  // Résumé par tournoi
+  const total = all.length;
+  const winnerA = all.filter((m) => m.winnerSlot === 'A').length;
+  container.appendChild(el('div', { class: 'alert alert-info', style: { marginTop: '20px' } },
+    el('strong', {}, `${total} matchs terminés`),
+    el('span', {}, ` · ${winnerA} victoires à gauche, ${total - winnerA} à droite.`)));
 }
 
 // ================================================================

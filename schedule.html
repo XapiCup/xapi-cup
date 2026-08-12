@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Planning global — Xapi Cup</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="index.html" class="logo">
+        <span class="logo-mark">⚽</span>
+        <div class="logo-text">
+          <span class="logo-title">XAPI <strong>CUP</strong></span>
+          <span class="logo-sub">Planning global</span>
+        </div>
+      </a>
+      <nav class="main-nav">
+        <a href="index.html" class="nav-link">Accueil</a>
+        <a href="viewer.html" class="nav-link">Tournois en direct</a>
+        <a href="schedule.html" class="nav-link active">Planning</a>
+        <a href="admin.html" class="nav-link nav-admin">Admin</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container schedule-global-page">
+    <div class="page-header">
+      <div>
+        <h1>📅 Planning global</h1>
+        <p class="muted">Vue multi-tournois et multi-terrains. Chaque créneau affiche les matchs simultanés côte à côte.</p>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-ghost" id="export-global-schedule-btn" style="background: var(--color-primary); color: #fff; border-color: var(--color-primary);">📸 Exporter en image</button>
+      </div>
+    </div>
+
+    <section class="card config-card" id="schedule-config">
+      <h2>⚙️ Configuration du planning</h2>
+      <p class="muted">Ces paramètres s'appliquent à tous les tournois. Édite-les puis génère les plannings par tournoi.</p>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="nb-terrains">Nombre de terrains</label>
+          <input type="number" id="nb-terrains" class="input" min="1" max="10" value="2" />
+        </div>
+        <div class="form-group">
+          <label for="match-duration">Durée d'un match (min)</label>
+          <input type="number" id="match-duration" class="input" min="5" max="60" value="20" />
+        </div>
+        <div class="form-group">
+          <label for="break-between">Pause entre matchs (min)</label>
+          <input type="number" id="break-between" class="input" min="0" max="30" value="5" />
+        </div>
+        <div class="form-group">
+          <label for="lunch-break">Pause déjeuner (min)</label>
+          <input type="number" id="lunch-break" class="input" min="0" max="180" value="60" />
+        </div>
+        <div class="form-group">
+          <label for="start-time">Heure de début</label>
+          <input type="time" id="start-time" class="input" value="09:00" />
+        </div>
+        <div class="form-group">
+          <label for="end-time">Heure de fin</label>
+          <input type="time" id="end-time" class="input" value="18:00" />
+        </div>
+        <div class="form-group">
+          <label class="checkbox-group">
+            <input type="checkbox" id="toggle-split-days" />
+            <span>Étaler sur plusieurs jours</span>
+          </label>
+        </div>
+      </div>
+      <div id="days-container" class="mt-3"></div>
+      <div class="mt-3" id="add-day-row" style="display:none;">
+        <button class="btn btn-sm btn-accent" id="add-day-btn">+ Ajouter un jour</button>
+      </div>
+      <div class="mt-3">
+        <button class="btn btn-primary" id="save-global-config-btn">💾 Sauvegarder la config globale</button>
+      </div>
+    </section>
+
+    <section class="card mt-3" id="schedule-view">
+      <div class="tournament-selector" id="tournament-selector"></div>
+      <div id="global-schedule-container" class="mt-3"></div>
+    </section>
+
+    <section class="card mt-3" id="conflict-panel"></section>
+  </main>
+
+  <!-- Modal : éditer un créneau -->
+  <div class="modal-backdrop" id="schedule-edit-modal">
+    <div class="modal">
+      <h3>✏️ Modifier le créneau</h3>
+      <div class="form-group">
+        <label for="se-date">Date</label>
+        <input type="date" id="se-date" class="input" />
+      </div>
+      <div class="form-group">
+        <label for="se-time">Heure</label>
+        <input type="time" id="se-time" class="input" />
+      </div>
+      <div class="form-group">
+        <label for="se-terrain">Terrain</label>
+        <input type="number" id="se-terrain" class="input" min="1" max="20" />
+      </div>
+      <div id="se-error"></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="se-cancel" style="background: var(--color-surface-2); color: var(--color-text);">Annuler</button>
+        <button class="btn btn-success" id="se-save">Enregistrer</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/schedule.js"></script>
+</body>
+</html>

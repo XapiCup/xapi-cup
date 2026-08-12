@@ -113,7 +113,9 @@ export function renderPoule(pouleIdx, teams, matches, qualifiersPerPool = 2, edi
 // ARBRE (bracket)
 // ============================================================
 export function renderBracket(bracket, state, opts = {}) {
-  const { title = 'Arbre', kind = 'gold', editable = false, onMatchClick = null, onWinnerSet = null } = opts;
+  const { title = 'Arbre', kind = 'gold', editable = false, onMatchClick = null, onClick = null, onWinnerSet = null } = opts;
+  // Compatibilite ascendante : on accepte 'onClick' comme alias de 'onMatchClick'
+  const _onMatchClick = onMatchClick || onClick;
   if (!bracket) return null;
 
   const wrapper = el('div', { class: 'bracket-wrapper' });
@@ -139,10 +141,40 @@ export function renderBracket(bracket, state, opts = {}) {
       getRoundLabel(rIdx, bracket.rounds.length)
     ));
     round.forEach((match, mIdx) => {
-      roundDiv.appendChild(renderBracketMatch(match, state, rIdx, mIdx, editable, onMatchClick, onWinnerSet));
+      roundDiv.appendChild(renderBracketMatch(match, state, rIdx, mIdx, editable, _onMatchClick, onWinnerSet));
     });
     tree.appendChild(roundDiv);
   });
+
+  // Petite finale (3e place) — match séparé, affiché après tous les rounds
+  if (bracket.thirdPlaceMatch) {
+    const thirdRound = el('div', { class: 'bracket-round bracket-third' });
+    thirdRound.appendChild(el('div', { class: 'bracket-round-title' }, '🥉 Petite finale'));
+    const m = bracket.thirdPlaceMatch;
+    const wrap = el('div', {
+      class: 'bracket-match'
+        + (m.scoreA != null && m.scoreB != null ? ' has-score' : '')
+        + (m.winnerSlot != null ? ' winner-decided' : '')
+        + (m.slotA == null || m.slotB == null ? ' not-ready' : ''),
+      dataset: { kind: 'third-place' },
+    });
+    if (editable && _onMatchClick && m.slotA != null && m.slotB != null) {
+      wrap.style.cursor = 'pointer';
+      wrap.addEventListener('click', () => {
+        // Le onMatchClick reçoit un objet match spécial pour la 3e place
+        _onMatchClick({ ...m, isThirdPlace: true, parentBracket: bracket }, -1, -1);
+      });
+    }
+    const tA = m.slotA ? teamById(state, m.slotA) : null;
+    const tB = m.slotB ? teamById(state, m.slotB) : null;
+    const aW = m.winnerSlot === 'A';
+    const bW = m.winnerSlot === 'B';
+    wrap.appendChild(renderBracketTeam(tA, m.scoreA, aW, m.winnerSlot && !aW));
+    wrap.appendChild(renderBracketTeam(tB, m.scoreB, bW, m.winnerSlot && !bW));
+    thirdRound.appendChild(wrap);
+    tree.appendChild(thirdRound);
+  }
+
   wrapper.appendChild(tree);
 
   if (editable) {

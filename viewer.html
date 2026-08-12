@@ -45,8 +45,13 @@
       </div>
     </section>
 
+    <nav class="viewer-tabs container" id="viewer-tabs">
+      <button class="v-tab active" data-viewer-tab="live">🔴 Tournoi en direct</button>
+      <button class="v-tab" data-viewer-tab="schedule">📅 Planning</button>
+    </nav>
+
     <!-- POULE -->
-    <section class="container tab-content active" id="tab-poules">
+    <section class="container tab-content active" id="tab-live">
       <div id="poules-container"></div>
     </section>
 
@@ -58,9 +63,12 @@
       </div>
       <div id="knockout-container" style="margin-top: 20px;"></div>
     </section>
+    </div>
 
-    <!-- PLANNING (public) -->
-    <section class="container" id="schedule-public" style="margin-top: 40px;"></section>
+    <!-- PLANNING (onglet séparé) -->
+    <section class="container tab-content" id="tab-schedule">
+      <div id="schedule-public"></div>
+    </section>
   </main>
 
   <!-- Feed live (collatéral fixe) -->

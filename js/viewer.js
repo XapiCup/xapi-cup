@@ -11,13 +11,15 @@ let activeBracketTab = 'gold';
 let lastHistoryLength = 0;
 
 onReady(() => {
-  $$('.tab[data-viewer-tab]').forEach((t) => {
+  // Onglets principaux (live / schedule)
+  $$('.v-tab').forEach((t) => {
     t.addEventListener('click', () => {
-      $$('.tab[data-viewer-tab]').forEach((x) => x.classList.remove('active'));
+      $$('.v-tab').forEach((x) => x.classList.remove('active'));
       t.classList.add('active');
       const target = t.dataset.viewerTab;
       $$('.tab-content').forEach((c) => c.classList.remove('active'));
-      $('#tab-' + target).classList.add('active');
+      $$('.tab-content').forEach((c) => c.classList.remove('active'));
+      $('#tab-' + target)?.classList.add('active');
     });
   });
   $$('.tab[data-bracket-tab]').forEach((t) => {
@@ -137,38 +139,85 @@ function renderSchedule(t) {
   if (!container) return;
   clear(container);
   if (!t || !t.schedule?.length) return;
-  if (t.config?.schedulePublic === false) return; // admin a cache le planning
-  container.appendChild(el('h3', { style: { marginTop: '20px' } }, '📅 Planning'));
-  // Group par date
-  const byDate = {};
+  if (t.config?.schedulePublic === false) {
+    container.appendChild(el('div', { class: 'alert alert-info' },
+      'Le planning est actuellement masqué par l\'administrateur.'));
+    return;
+  }
+
+  container.appendChild(el('h2', { style: { marginTop: '0' } }, '📅 Planning'));
+  container.appendChild(el('p', { class: 'muted', style: { marginTop: '4px' } },
+    'Matchs simultanés joués en parallèle sur plusieurs terrains.'));
+
+  // Group par (date, time) → slots
+  const slotsByDT = new Map();
   t.schedule.forEach((s) => {
-    if (!byDate[s.date]) byDate[s.date] = [];
-    byDate[s.date].push(s);
+    const key = s.date + '__' + s.time;
+    if (!slotsByDT.has(key)) slotsByDT.set(key, { date: s.date, time: s.time, terrains: [] });
+    slotsByDT.get(key).terrains.push(s);
   });
+  const slots = Array.from(slotsByDT.values()).sort((a, b) =>
+    (a.date + a.time).localeCompare(b.date + b.time)
+  );
+
   const matchesMap = new Map();
   t.matches.forEach((m) => matchesMap.set(m.id, m));
   (t.bracketMatches || []).forEach((m) => matchesMap.set(m.id, m));
-  Object.keys(byDate).sort().forEach((date) => {
-    container.appendChild(el('h4', { style: { color: 'var(--color-primary)', marginTop: '12px' } },
+
+  // Group par date
+  const slotsByDate = new Map();
+  slots.forEach((s) => {
+    if (!slotsByDate.has(s.date)) slotsByDate.set(s.date, []);
+    slotsByDate.get(s.date).push(s);
+  });
+
+  Array.from(slotsByDate.entries()).sort(([a],[b]) => a.localeCompare(b)).forEach(([date, daySlots]) => {
+    container.appendChild(el('h3', { style: { color: 'var(--color-primary)', marginTop: '20px' } },
       new Date(date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })));
     const table = el('table', { class: 'standings-table' });
     table.appendChild(el('thead', {}, el('tr', {},
-      el('th', {}, 'Heure'), el('th', {}, 'Terrain'), el('th', { style: { textAlign: 'left' } }, 'Match'), el('th', {}, 'Score'))));
+      el('th', {}, 'Heure'),
+      el('th', {}, 'T1'),
+      el('th', {}, 'T2'),
+      el('th', {}, 'T3'),
+    )));
     const tb = el('tbody');
-    byDate[date].sort((a, b) => a.time.localeCompare(b.time)).forEach((s) => {
-      const m = matchesMap.get(s.matchId);
-      if (!m) return;
-      const tA = t.teams.find((x) => x.id === m.teamA);
-      const tB = t.teams.find((x) => x.id === m.teamB);
-      tb.appendChild(el('tr', {},
-        el('td', { style: { fontWeight: 600 } }, s.time),
-        el('td', {}, 'T' + s.terrain),
-        el('td', {}, (tA?.name || '?') + ' vs ' + (tB?.name || '?')),
-        el('td', { class: 'text-center', style: { fontWeight: 600 } },
-          (m.scoreA != null ? m.scoreA : '-') + ' - ' + (m.scoreB != null ? m.scoreB : '-'))
-      ));
+    daySlots.forEach((slot) => {
+      const tr = el('tr');
+      tr.appendChild(el('td', { style: { fontWeight: 600, verticalAlign: 'top' } }, slot.time));
+      for (let i = 0; i < 3; i++) {
+        const sc = slot.terrains.find((s) => s.terrain === i + 1);
+        if (!sc) { tr.appendChild(el('td', { class: 'muted', style: { color: '#aaa' } }, '—')); continue; }
+        const m = matchesMap.get(sc.matchId);
+        if (!m) { tr.appendChild(el('td', {}, '?')); continue; }
+        const tA = t.teams.find((x) => x.id === m.teamA);
+        const tB = t.teams.find((x) => x.id === m.teamB);
+        const aWins = m.winnerSlot === 'A';
+        const bWins = m.winnerSlot === 'B';
+        tr.appendChild(el('td', {},
+          el('div', { class: aWins ? 'winner' : '' }, (tA?.name || '?').substring(0, 14)),
+          el('div', { class: 'muted', style: { fontSize: '0.75rem', textAlign: 'center' } }, 'vs'),
+          el('div', { class: bWins ? 'winner' : '' }, (tB?.name || '?').substring(0, 14)),
+          m.scoreA != null ? el('div', { style: { fontWeight: 700, textAlign: 'center', marginTop: '4px' } },
+            `${m.scoreA} - ${m.scoreB}`) : null,
+        ));
+      }
+      tb.appendChild(tr);
     });
     table.appendChild(tb);
     container.appendChild(table);
+  });
+}
+
+// ================================================================
+// ONGLETS VIEWER (live | schedule)
+// ================================================================
+function bindViewerTabs() {
+  $$('.v-tab').forEach((t) => {
+    t.addEventListener('click', () => {
+      const target = t.dataset.viewerTab;
+      $$('.v-tab').forEach((x) => x.classList.toggle('active', x === t));
+      $$('.tab-content').forEach((c) => c.classList.toggle('active', c.id === `tab-${target}`));
+    });
   });
 }

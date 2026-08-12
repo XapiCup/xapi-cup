@@ -176,17 +176,32 @@ export function buildBracket(seededTeams) {
     rounds.push(round);
   }
 
+  // PETITE FINALE (match pour la 3e place) :
+  // S'il y a au moins 2 demi-finales (4+ équipes), créer le match entre les perdants des demi
+  let thirdPlaceMatch = null;
+  if (totalRounds >= 2) {
+    thirdPlaceMatch = {
+      id: 'b_3rd_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+      label: 'Petite finale',
+      slotA: null, slotB: null,
+      scoreA: null, scoreB: null,
+      winnerSlot: null, finished: false,
+      // Les perdants des demi-finales (rounds[totalRounds-2], qui sont les matchs 0 et 1)
+      fromSemis: true,
+    };
+  }
+
   // Propagation initiale : pour les byes, on propage déjà le vainqueur
   propagateAllByes(rounds);
 
-  return { rounds, size, totalRounds, byes };
+  return { rounds, size, totalRounds, byes, thirdPlaceMatch };
 }
 
 /**
- * Propage tous les vainqueurs déjà connus (byes + matchs terminés) au round suivant.
- * Appelé après chaque modification d'un score.
+ * Propage tous les vainqueurs déjà connus (byes + matchs terminés) au round suivant,
+ * ET peuple la petite finale (3e place) avec les perdants des demi-finales.
  */
-function propagateAllByes(rounds) {
+function propagateAllByes(rounds, thirdPlaceMatch = null) {
   for (let r = 0; r < rounds.length - 1; r++) {
     const round = rounds[r];
     for (let m = 0; m < round.length; m++) {
@@ -200,13 +215,22 @@ function propagateAllByes(rounds) {
       if (!nextRound) continue;
       const nextMatch = nextRound[match.nextMatchIdx];
       if (!nextMatch) continue;
-      // Si le match suivant a déjà une équipe, c'est qu'on a une collision — ne pas écraser
-      // (en pratique, ça n'arrive pas car les vainqueurs vont dans des slots opposés)
       if (match.nextSlot === 'A') {
         nextMatch.slotA = winnerId;
       } else {
         nextMatch.slotB = winnerId;
       }
+    }
+  }
+
+  // Petite finale : se remplit quand les DEUX demi-finales sont terminées
+  if (thirdPlaceMatch && rounds.length >= 2) {
+    const semisRound = rounds[rounds.length - 2];
+    if (semisRound.length >= 2 && semisRound[0].finished && semisRound[1].finished) {
+      const semi0 = semisRound[0];
+      const semi1 = semisRound[1];
+      thirdPlaceMatch.slotA = semi0.winnerSlot === 'A' ? semi0.slotB : semi0.slotA;
+      thirdPlaceMatch.slotB = semi1.winnerSlot === 'A' ? semi1.slotB : semi1.slotA;
     }
   }
 }
@@ -247,7 +271,7 @@ export function setBracketScore(bracket, roundIdx, matchIdx, scoreA, scoreB) {
   else match.winnerSlot = null; // égalité, à départager
   match.finished = match.winnerSlot != null;
   // Propage
-  propagateAllByes(newBracket.rounds);
+  propagateAllByes(newBracket.rounds, newBracket.thirdPlaceMatch);
   return newBracket;
 }
 
@@ -262,7 +286,24 @@ export function setBracketWinner(bracket, roundIdx, matchIdx, winnerSlot) {
   }
   match.winnerSlot = winnerSlot;
   match.finished = true;
-  propagateAllByes(newBracket.rounds);
+  propagateAllByes(newBracket.rounds, newBracket.thirdPlaceMatch);
+  return newBracket;
+}
+
+/**
+ * Saisir le score de la petite finale.
+ */
+export function setThirdPlaceScore(bracket, scoreA, scoreB) {
+  const newBracket = structuredClone(bracket);
+  const m = newBracket.thirdPlaceMatch;
+  if (!m || m.slotA == null || m.slotB == null) {
+    throw new Error('Petite finale incomplète.');
+  }
+  m.scoreA = scoreA; m.scoreB = scoreB;
+  if (scoreA > scoreB) m.winnerSlot = 'A';
+  else if (scoreB > scoreA) m.winnerSlot = 'B';
+  else m.winnerSlot = null;
+  m.finished = m.winnerSlot != null;
   return newBracket;
 }
 
@@ -376,28 +417,33 @@ function scheduleDay(matches, { nbTerrains, matchDurationMin, breakBetweenMin, l
   const dayEnd = parseTime(endTime);
   const out = [];
   let slotIdx = 0;
-  // Premier slot : startTime
   let currentTime = dayStart;
-  for (let i = 0; i < matches.length; i++) {
+
+  // Groupe les matchs en créneaux de `nbTerrains` matchs simultanés.
+  // Chaque créneau = 1 match par terrain, tous en même temps.
+  const nbSlots = Math.ceil(matches.length / nbTerrains);
+  for (let s = 0; s < nbSlots; s++) {
     // Pause déj à 12h30 (midi + 30 min)
     const minutes = Math.floor(currentTime / 60);
     const lunchTrigger = 12 * 60 + 30;
     if (minutes >= lunchTrigger && minutes < lunchTrigger + lunchBreakMin) {
       currentTime = lunchTrigger + lunchBreakMin;
     }
-    // Fin de journée : stop
-    if (currentTime + matchDurationMin > dayEnd) {
-      // on dépasse, mais on l'ajoute quand même (l'admin pourra éditer)
+    // Fin de journée : stop (on n'ajoute plus de créneau, mais l'admin pourra éditer)
+    if (currentTime + matchDurationMin > dayEnd) break;
+
+    for (let t = 0; t < nbTerrains; t++) {
+      const matchIdx = s * nbTerrains + t;
+      if (matchIdx >= matches.length) break;
+      out.push({
+        matchId: matches[matchIdx].id,
+        date,
+        time: minutesToTime(currentTime),
+        terrain: t + 1,
+        slotIdx: slotIdx++,
+        durationMin: matchDurationMin,
+      });
     }
-    const terrain = (i % nbTerrains) + 1;
-    out.push({
-      matchId: matches[i].id,
-      date,
-      time: minutesToTime(currentTime),
-      terrain,
-      slotIdx: slotIdx++,
-      durationMin: matchDurationMin,
-    });
     currentTime += totalSlot;
   }
   return out;
