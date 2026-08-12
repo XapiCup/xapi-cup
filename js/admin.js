@@ -252,7 +252,7 @@ function bindUI() {
   });
   $('#modal-save')?.addEventListener('click', saveBracketModal);
 
-  // (Modale planning supprimée — déplacée sur la page schedule.html)
+  // (Modale planning supprimée)
 
 }
 
