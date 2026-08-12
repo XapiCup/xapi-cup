@@ -513,3 +513,184 @@ export function detectScheduleConflicts(schedule, matches, teams) {
   });
   return conflicts;
 }
+
+/**
+ * Detecte TOUS les conflits : meme terrain 2x, meme equipe 2x, match deja planifie, etc.
+ * Retourne un objet {terrain: [], equipe: [], matchDoublon: []}
+ */
+export function detectAllConflicts(schedule, matches, teams) {
+  const conflicts = { terrain: [], equipe: [], matchDoublon: [] };
+  const matchById = new Map(matches.map((m) => [m.id, m]));
+  // Compteur creneaux (date+time+terrain) → nb matchs
+  const slots = new Map();
+  // Equipe → creneaux
+  const teamSlots = new Map();
+  // Match → nb fois planifie
+  const matchPlanned = new Map();
+  schedule.forEach((s) => {
+    const slotKey = `${s.date}|${s.time}|${s.terrain}`;
+    if (!slots.has(slotKey)) slots.set(slotKey, []);
+    slots.get(slotKey).push(s);
+    const m = matchById.get(s.matchId);
+    if (!m) return;
+    matchPlanned.set(s.matchId, (matchPlanned.get(s.matchId) || 0) + 1);
+    [m.teamA, m.teamB].forEach((tid) => {
+      if (!tid) return;
+      if (!teamSlots.has(tid)) teamSlots.set(tid, []);
+      teamSlots.get(tid).push({ ...s, teamId: tid });
+    });
+  });
+  // Conflits terrain : meme slot avec >1 match
+  slots.forEach((arr, slotKey) => {
+    if (arr.length > 1) {
+      conflicts.terrain.push({
+        slot: arr[0],
+        matchIds: arr.map((s) => s.matchId),
+        reason: `${arr.length} matchs sur le même créneau`,
+      });
+    }
+  });
+  // Conflits equipe
+  teamSlots.forEach((slots, teamId) => {
+    slots.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+    for (let i = 0; i < slots.length - 1; i++) {
+      const a = slots[i], b = slots[i + 1];
+      if (a.date === b.date && a.time === b.time) {
+        const team = teams.find((t) => t.id === teamId);
+        conflicts.equipe.push({
+          team: team?.name || teamId,
+          slot1: a, slot2: b,
+          reason: 'Même équipe sur 2 terrains au même créneau',
+        });
+      }
+    }
+  });
+  // Matchs planifiés plusieurs fois
+  matchPlanned.forEach((count, mid) => {
+    if (count > 1) conflicts.matchDoublon.push({ matchId: mid, count });
+  });
+  return conflicts;
+}
+
+/**
+ * Résout automatiquement les conflits d'un planning en re-generant
+ * les matchs en conflit avec plus de terrains ou un decalage temporel.
+ *
+ * Strategie :
+ * 1. Detecter tous les conflits (terrain + equipe)
+ * 2. Pour chaque creneau en conflit, garder le 1er match et decaler les autres
+ *    au prochain creneau libre (meme terrain libre OU autre terrain, meme heure).
+ * 3. Replacer en boucle jusqu'a 0 conflit ou max iterations.
+ */
+export function autoResolveConflicts(schedule, matches, config) {
+  const {
+    nbTerrains = 2,
+    matchDurationMin = 20,
+    breakBetweenMin = 5,
+    startTime = '09:00',
+    endTime = '18:00',
+    maxDays = 14,
+  } = config || {};
+  const matchById = new Map(matches.map((m) => [m.id, m]));
+  const dayStart = parseTime(startTime);
+  const dayEnd = parseTime(endTime);
+  const slotMinutes = matchDurationMin + breakBetweenMin;
+  // Slots par jour
+  const slotsPerDay = Math.floor((dayEnd - dayStart) / slotMinutes);
+  // Reproduit une copie du planning
+  let current = schedule.map((s) => ({ ...s }));
+  let totalResolved = 0;
+  // Iterate (max 10 passes pour stabiliser)
+  for (let pass = 0; pass < 10; pass++) {
+    const conflicts = detectAllConflicts(current, matches, []);
+    const totalConflicts = conflicts.terrain.length + conflicts.equipe.length;
+    if (totalConflicts === 0) break;
+    // Group les creneaux en conflit (terrain + equipe)
+    // Pour terrain : meme (date|time|terrain) avec >1 match
+    // Pour equipe : meme (date|time) avec meme equipe sur 2 terrains differents
+    const conflictsByKey = new Map();
+    conflicts.terrain.forEach((c) => {
+      const k = `${c.slot.date}|${c.slot.time}|${c.slot.terrain}`;
+      if (!conflictsByKey.has(k)) conflictsByKey.set(k, []);
+      conflictsByKey.get(k).push({ type: 'terrain', slot: c.slot });
+    });
+    conflicts.equipe.forEach((c) => {
+      // Pour equipe conflict, on deplace le 2e match (slot2)
+      const k = `${c.slot2.date}|${c.slot2.time}|${c.slot2.terrain}`;
+      if (!conflictsByKey.has(k)) conflictsByKey.set(k, []);
+      conflictsByKey.get(k).push({ type: 'equipe', slot: c.slot2, team: c.team });
+    });
+    const newSchedule = [...current];
+    // Pour chaque conflit, on deplace le(s) match(s) concerne(s)
+    conflictsByKey.forEach((conflist, k) => {
+      // Trouver le slot dans newSchedule et le remplacer
+      const [date, time, terrain] = k.split('|');
+      const idx = newSchedule.findIndex((s) => s.date === date && s.time === time && s.terrain === parseInt(terrain));
+      if (idx === -1) return;
+      const s = newSchedule[idx];
+      const m = matchById.get(s.matchId);
+      if (!m) return;
+      const teams = [m.teamA, m.teamB].filter(Boolean);
+      const placed = findNextFreeSlot(current, m, teams, { nbTerrains, slotsPerDay, dayStart, slotMinutes, maxDays, skipDate: s.date, skipTime: s.time, skipTerrain: s.terrain }, matchById);
+      if (placed) {
+        placed._reassigned = true;
+        newSchedule[idx] = placed;
+        totalResolved++;
+      }
+      // Si pas trouve, on garde l'ancien
+    });
+    current = newSchedule;
+  }
+  return { schedule: current, resolved: totalResolved };
+}
+
+/**
+ * Trouve le prochain creneau libre pour un match en evitant date|time|terrain donne.
+ * Parcourt les jours depuis la date du 1er creneau du planning.
+ */
+function findNextFreeSlot(schedule, match, teams, opts, matchById) {
+  // Occupation actuelle : set de "date|time|terrain" et "date|time|teamId"
+  const occupied = new Set();
+  const teamOcc = new Set();
+  schedule.forEach((s) => {
+    occupied.add(`${s.date}|${s.time}|${s.terrain}`);
+    const ms = matchById.get(s.matchId);
+    if (!ms) return;
+    [ms.teamA, ms.teamB].forEach((tid) => {
+      if (tid) teamOcc.add(`${s.date}|${s.time}|${tid}`);
+    });
+  });
+  // Date de depart = 1ere date du planning (ou aujourd'hui)
+  let startDate;
+  if (schedule.length && schedule[0].date) {
+    const [y, m, d] = schedule[0].date.split('-').map(Number);
+    startDate = new Date(y, m - 1, d);
+  } else {
+    startDate = new Date();
+    startDate.setHours(0, 0, 0, 0);
+  }
+  for (let dayI = 0; dayI < opts.maxDays; dayI++) {
+    const cursor = new Date(startDate);
+    cursor.setDate(startDate.getDate() + dayI);
+    const dateStr = cursor.toISOString().slice(0, 10);
+    for (let sI = 0; sI < opts.slotsPerDay; sI++) {
+      const curMin = opts.dayStart + sI * opts.slotMinutes;
+      const hh = Math.floor(curMin / 60);
+      const mm = curMin % 60;
+      const timeStr = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+      for (let t = 1; t <= opts.nbTerrains; t++) {
+        // Skip le creneau d'origine
+        if (dateStr === opts.skipDate && timeStr === opts.skipTime && t === opts.skipTerrain) continue;
+        const slotKey = `${dateStr}|${timeStr}|${t}`;
+        if (occupied.has(slotKey)) continue;
+        let free = true;
+        for (const tid of teams) {
+          if (teamOcc.has(`${dateStr}|${timeStr}|${tid}`)) { free = false; break; }
+        }
+        if (!free) continue;
+        return { matchId: match.id, date: dateStr, time: timeStr, terrain: t };
+      }
+    }
+  }
+  return null;
+}

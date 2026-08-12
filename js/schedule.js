@@ -3,7 +3,7 @@
    ================================================================ */
 
 import { store } from './state.js';
-import { generateSchedule, detectScheduleConflicts } from './tournament.js';
+import { generateSchedule, detectScheduleConflicts, detectAllConflicts, autoResolveConflicts } from './tournament.js';
 import { $, $$, el, clear, toast, downloadFile, onReady } from './app.js';
 import { exportElementAsImage } from './export.js';
 import { isAuthenticated, renderLoginScreen, bindLogoutButton } from './auth.js';
@@ -240,123 +240,36 @@ function renderTournamentSelector() {
 }
 
 // ================================================================
-// VUE PLANNING
+// VUE PLANNING (centree sur les TERRAINS)
 // ================================================================
 function renderScheduleView() {
   const container = $('#global-schedule-container');
   const conflictPanel = $('#conflict-panel');
   if (!container) return;
   clear(container); clear(conflictPanel);
-  // Pas de tournoi sélectionné : on montre le sélecteur
-  if (!currentTournamentId && selectedTournamentIds.size === 0) {
-    renderTournamentPicker();
-    return;
-  }
-  // Multi-tournois : on affiche le planning consolidé
-  if (selectedTournamentIds.size > 0) {
-    renderMultiTournamentView();
-    return;
-  }
-  // Sinon : vue mono-tournoi (existante)
-  renderSingleTournamentView();
+  renderTerrainView();
 }
 
 /**
- * Sélecteur de tournois (1ere visite) : liste de cards à cocher
- * pour générer un planning multi-tournois.
+ * Vue principale : grille Terrain x Creneau avec TOUS les matchs de TOUS les tournois.
+ * Pas de selection preliminaire : tout est melange.
  */
-function renderTournamentPicker() {
+function renderTerrainView() {
   const container = $('#global-schedule-container');
   const ts = store.listTournaments().filter((t) => !t.archived);
-  if (!ts.length) {
-    container.appendChild(el('div', { class: 'empty-state' },
-      el('div', { class: 'empty-icon' }, '🏆'),
-      el('h3', {}, 'Aucun tournoi'),
-      el('p', {}, 'Crée d\'abord un tournoi depuis l\'admin.')));
-    return;
-  }
-  container.appendChild(el('div', { class: 'picker-header' },
-    el('h2', {}, '📅 Sélectionnez les tournois'),
-    el('p', { class: 'muted' }, 'Cochez un ou plusieurs tournois pour voir leurs plannings consolidés avec détection des conflits.')));
 
-  const grid = el('div', { class: 'picker-grid' });
-  ts.forEach((t) => {
-    const card = el('label', { class: 'picker-card' + (selectedTournamentIds.has(t.id) ? ' active' : '') },
-      el('input', {
-        type: 'checkbox',
-        checked: selectedTournamentIds.has(t.id),
-        onchange: (e) => {
-          if (e.target.checked) selectedTournamentIds.add(t.id);
-          else selectedTournamentIds.delete(t.id);
-          if (selectedTournamentIds.size === 1 && !currentTournamentId) {
-            // Si 1 seul selectionne, on bascule en vue mono
-            currentTournamentId = [...selectedTournamentIds][0];
-            selectedTournamentIds.clear();
-          }
-          renderScheduleView();
-        },
-      }),
-      el('div', { class: 'picker-card-body' },
-        el('div', { class: 'picker-card-name' }, t.name),
-        t.date ? el('div', { class: 'picker-card-date' }, '📅 ' + new Date(t.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })) : null,
-        el('div', { class: 'picker-card-stats muted' },
-          `${t.teams.length} équipes · ${t.matches.length + (t.bracketMatches?.length || 0)} matchs · ${(t.schedule || []).length} créneaux`),
-      ),
-    );
-    grid.appendChild(card);
-  });
-  container.appendChild(grid);
-  if (selectedTournamentIds.size > 0) {
-    const btn = el('button', {
-      class: 'btn btn-primary btn-lg mt-3',
-      onclick: () => renderScheduleView(),
-    }, `📅 Voir le planning consolidé (${selectedTournamentIds.size} tournoi${selectedTournamentIds.size > 1 ? 's' : ''})`);
-    container.appendChild(btn);
-  }
-}
-
-/**
- * Vue multi-tournois : fusionne les plannings et détecte les conflits cross-tournois.
- */
-function renderMultiTournamentView() {
-  const container = $('#global-schedule-container');
-  const conflictPanel = $('#conflict-panel');
-  // Bandeau de selection
-  const ts = [...selectedTournamentIds].map((id) => store.getTournament(id)).filter(Boolean);
-  const header = el('div', { class: 'multi-t-header' },
-    el('button', { class: 'btn btn-sm',
-      style: { background: 'var(--color-surface-2)', color: 'var(--color-text)', border: '1px solid var(--color-border)' },
-      onclick: () => { selectedTournamentIds.clear(); currentTournamentId = null; renderScheduleView(); }
-    }, '← Changer de tournois'),
-    el('h2', { style: { margin: 0 } }, `📅 Planning consolidé · ${ts.length} tournoi${ts.length > 1 ? 's' : ''}`),
-  );
-  container.appendChild(header);
-
-  // Liste des chips par tournoi
-  const chips = el('div', { class: 'multi-t-chips' });
-  ts.forEach((t) => {
-    chips.appendChild(el('span', { class: 'multi-t-chip' },
-      t.name,
-      el('button', {
-        class: 'multi-t-chip-x',
-        title: 'Retirer',
-        onclick: () => {
-          selectedTournamentIds.delete(t.id);
-          if (selectedTournamentIds.size === 0) renderScheduleView();
-          else renderScheduleView();
-        },
-      }, '×'),
-    ));
-  });
-  container.appendChild(chips);
-
-  // === Collecte de tous les creneaux + matchs ===
+  // === Collecte globale ===
   const allSchedules = [];
   const allMatches = new Map();
   const teamsByTour = new Map();
+  const cfg = getGlobalConfig();
+  const nbTerrains = Math.max(
+    cfg.nbTerrains || 8,
+    ...ts.flatMap((t) => (t.schedule || []).map((s) => s.terrain))
+  );
+
   ts.forEach((t) => {
     (t.schedule || []).forEach((s) => {
-      // Annoter avec le nom du tournoi
       allSchedules.push({ ...s, _tournament: t.name, _tournamentId: t.id });
     });
     t.matches.forEach((m) => { if (!allMatches.has(m.id)) allMatches.set(m.id, { ...m, _tName: t.name }); });
@@ -364,193 +277,158 @@ function renderMultiTournamentView() {
     teamsByTour.set(t.id, t.teams);
   });
 
+  // === Toolbar : actions globales ===
+  const toolbar = el('div', { class: 'terrain-toolbar' },
+    el('button', { class: 'btn btn-primary',
+      onclick: () => generateAllSchedules(ts, cfg)
+    }, '🎲 Générer le planning global'),
+    el('button', { class: 'btn',
+      style: { background: 'var(--color-warning)', color: '#fff' },
+      onclick: () => resolveAllConflicts(ts, cfg)
+    }, '🛠️ Résoudre les conflits'),
+    el('span', { class: 'muted', style: { marginLeft: 'auto' } },
+      `${allSchedules.length} créneaux planifiés · ${ts.length} tournoi${ts.length > 1 ? 's' : ''}`),
+  );
+  container.appendChild(toolbar);
+
+  // === Conflits ===
+  const conflicts = detectAllConflicts(allSchedules, [...allMatches.values()],
+    [...teamsByTour.values()].flat());
+  const totalConflicts = conflicts.terrain.length + conflicts.equipe.length;
+  const conflictPanel = $('#conflict-panel');
+  if (totalConflicts > 0) {
+    conflictPanel.appendChild(el('div', { class: 'alert alert-warn' },
+      el('strong', {}, `⚠️ ${totalConflicts} conflit${totalConflicts > 1 ? 's' : ''} détecté${totalConflicts > 1 ? 's' : ''} :`),
+      conflicts.terrain.length > 0 ? el('div', {}, `  · ${conflicts.terrain.length} conflit(s) de terrain`) : null,
+      conflicts.equipe.length > 0 ? el('div', {}, `  · ${conflicts.equipe.length} conflit(s) d'équipe`) : null,
+      el('div', { style: { marginTop: '8px' } },
+        'Clique sur "🛠️ Résoudre les conflits" pour les corriger automatiquement.',
+      ),
+    ));
+  } else if (allSchedules.length > 0) {
+    conflictPanel.appendChild(el('div', { class: 'alert alert-info' },
+      '✅ Aucun conflit détecté.'));
+  }
+
+  // === Tableau principal : lignes=créneaux, colonnes=terrains ===
   if (allSchedules.length === 0) {
     container.appendChild(el('div', { class: 'empty-state' },
       el('div', { class: 'empty-icon' }, '📅'),
-      el('h3', {}, 'Aucun créneau planifié'),
-      el('p', { class: 'muted' }, 'Va dans l\'admin d\'un de ces tournois → onglet Planning → Génère.')));
+      el('h3', {}, 'Aucun planning généré'),
+      el('p', { class: 'muted' }, 'Clique sur "🎲 Générer le planning global" pour créer les créneaux multi-terrains.')));
     return;
   }
 
-  // === Tri par datetime ===
-  allSchedules.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
-
-  // === Detection conflits cross-tournois ===
-  // Un conflit = meme creneau (date+time) ET meme terrain, matchs différents
-  // OU meme equipe qui joue 2 matchs en meme temps
-  const conflicts = [];
-  // Terrain conflicts
-  for (let i = 0; i < allSchedules.length; i++) {
-    for (let j = i + 1; j < allSchedules.length; j++) {
-      const a = allSchedules[i], b = allSchedules[j];
-      if (a.date === b.date && a.time === b.time) {
-        if (a.terrain === b.terrain && a.matchId !== b.matchId) {
-          conflicts.push({ type: 'terrain', a, b, msg: `Terrain ${a.terrain} pris 2× à ${a.time} (${a._tournament} vs ${b._tournament})` });
-        }
-        // Equipes qui jouent 2 matchs en meme temps
-        const ma = allMatches.get(a.matchId);
-        const mb = allMatches.get(b.matchId);
-        if (ma && mb) {
-          const aTeams = [ma.slotA || ma.teamA, ma.slotB || ma.teamB].filter(Boolean);
-          const bTeams = [mb.slotA || mb.teamA, mb.slotB || mb.teamB].filter(Boolean);
-          const shared = aTeams.find((tid) => bTeams.includes(tid));
-          if (shared) {
-            // Resoudre le nom
-            const teamObj = [...teamsByTour.values()].flat().find((x) => x.id === shared);
-            conflicts.push({ type: 'equipe', a, b, msg: `Équipe "${teamObj?.name || shared}" joue 2× à ${a.time} (${a._tournament} vs ${b._tournament})` });
-          }
-        }
-      }
-    }
-  }
-
-  // === Rendu tableau consolide ===
-  // Colonnes : Heure | Terrain 1..N (max terrains) | avec badge tournoi par case
-  const nbTerrains = Math.max(...allSchedules.map((s) => s.terrain), 1);
-  // Group par date
+  // Group par date puis par créneau (date+time)
   const byDate = new Map();
   allSchedules.forEach((s) => {
-    if (!byDate.has(s.date)) byDate.set(s.date, []);
-    byDate.get(s.date).push(s);
+    if (!byDate.has(s.date)) byDate.set(s.date, new Map());
+    const byTime = byDate.get(s.date);
+    if (!byTime.has(s.time)) byTime.set(s.time, []);
+    byTime.get(s.time).push(s);
   });
 
   Array.from(byDate.entries()).sort(([a],[b]) => a.localeCompare(b)).forEach(([date, daySlots]) => {
-    container.appendChild(el('h3', { style: { color: 'var(--color-primary)', marginTop: '20px' } },
-      new Date(date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })));
-    // Group par (time) pour avoir 1 ligne = 1 creneau multi-terrain
-    const byTime = new Map();
-    daySlots.forEach((s) => {
-      if (!byTime.has(s.time)) byTime.set(s.time, []);
-      byTime.get(s.time).push(s);
-    });
-    const table = el('table', { class: 'standings-table schedule-consolidated' });
+    container.appendChild(el('h3', { class: 'terrain-day-title' },
+      '📅 ' + new Date(date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })));
+    const table = el('table', { class: 'standings-table terrain-grid' });
     table.appendChild(el('thead', {}, el('tr', {},
-      el('th', {}, 'Heure'),
-      ...Array.from({ length: nbTerrains }, (_, i) => el('th', {}, `T${i + 1}`)),
+      el('th', { style: { minWidth: '80px' } }, 'Heure'),
+      ...Array.from({ length: nbTerrains }, (_, i) => el('th', { style: { textAlign: 'center' } }, `T${i + 1}`)),
     )));
     const tb = el('tbody');
-    Array.from(byTime.entries()).sort(([a],[b]) => a.localeCompare(b)).forEach(([time, slots]) => {
+    // Trier les créneaux par heure
+    const sortedTimes = Array.from(daySlots.entries()).sort(([a],[b]) => a.localeCompare(b));
+    sortedTimes.forEach(([time, slots]) => {
       const tr = el('tr');
-      tr.appendChild(el('td', { style: { fontWeight: 600, verticalAlign: 'top' } }, time));
-      for (let i = 0; i < nbTerrains; i++) {
-        const slot = slots.find((s) => s.terrain === i + 1);
-        if (!slot) { tr.appendChild(el('td', { class: 'muted', style: { color: '#aaa' } }, '—')); continue; }
+      tr.appendChild(el('td', { class: 'terrain-time', style: { fontWeight: 700, verticalAlign: 'top', background: 'var(--color-surface-2)' } }, time));
+      for (let t = 1; t <= nbTerrains; t++) {
+        const slot = slots.find((s) => s.terrain === t);
+        if (!slot) {
+          tr.appendChild(el('td', { class: 'terrain-cell-empty', style: { color: '#ccc', textAlign: 'center' } }, '—'));
+          continue;
+        }
         const m = allMatches.get(slot.matchId);
-        if (!m) { tr.appendChild(el('td', {}, '?')); continue; }
-        const tA = [...teamsByTour.values()].flat().find((x) => x.id === (m.slotA || m.teamA));
-        const tB = [...teamsByTour.values()].flat().find((x) => x.id === (m.slotB || m.teamB));
+        if (!m) {
+          tr.appendChild(el('td', {}, '?'));
+          continue;
+        }
+        const teamObj = [...teamsByTour.values()].flat();
+        const tA = teamObj.find((x) => x.id === (m.slotA || m.teamA));
+        const tB = teamObj.find((x) => x.id === (m.slotB || m.teamB));
         const aWins = m.winnerSlot === 'A';
         const bWins = m.winnerSlot === 'B';
-        tr.appendChild(el('td', { class: 'schedule-cell' },
-          el('div', { class: 'schedule-cell-tour', style: { fontSize: '0.7rem', color: 'var(--color-muted)', fontWeight: 600, textTransform: 'uppercase' } }, slot._tournament),
-          el('div', { class: aWins ? 'winner' : '' }, (tA?.name || '?').substring(0, 14)),
+        const cell = el('td', { class: 'terrain-cell' },
+          el('div', { class: 'terrain-cell-tour' }, slot._tournament),
+          el('div', { class: aWins ? 'winner' : '' }, (tA?.name || '?').substring(0, 16)),
           el('div', { class: 'muted', style: { fontSize: '0.75rem', textAlign: 'center' } }, 'vs'),
-          el('div', { class: bWins ? 'winner' : '' }, (tB?.name || '?').substring(0, 14)),
-          m.scoreA != null ? el('div', { style: { fontWeight: 700, textAlign: 'center', marginTop: '4px' } },
-            `${m.scoreA} - ${m.scoreB}`) : null,
-        ));
+          el('div', { class: bWins ? 'winner' : '' }, (tB?.name || '?').substring(0, 16)),
+          m.scoreA != null ? el('div', { class: 'terrain-cell-score' }, `${m.scoreA} - ${m.scoreB}`) : null,
+          slot._reassigned ? el('div', { class: 'terrain-cell-badge' }, '🔄 déplacé') : null,
+        );
+        tr.appendChild(cell);
       }
       tb.appendChild(tr);
     });
     table.appendChild(tb);
     container.appendChild(table);
   });
-
-  // === Conflits ===
-  if (conflicts.length) {
-    conflictPanel.appendChild(el('h3', {}, '⚠ Conflits détectés entre tournois'));
-    conflictPanel.appendChild(el('div', { class: 'alert alert-warn' },
-      el('ul', {}, ...conflicts.map((c) => el('li', {}, c.msg)))));
-  } else {
-    conflictPanel.appendChild(el('div', { class: 'alert alert-info' },
-      '✅ Aucun conflit détecté entre les tournois sélectionnés.'));
-  }
 }
 
-/**
- * Vue mono-tournoi (existante, legerement adaptee pour rafraichir le planning brackets)
- */
-function renderSingleTournamentView() {
-  const container = $('#global-schedule-container');
-  const conflictPanel = $('#conflict-panel');
-  const t = store.currentTournament();
-  if (!t || t.id !== currentTournamentId) {
-    store.switchTournament(currentTournamentId);
-    setTimeout(renderSingleTournamentView, 50);
-    return;
-  }
-  // Bouton retour
-  container.appendChild(el('div', { class: 'mt-2 mb-2' },
-    el('button', { class: 'btn btn-sm',
-      style: { background: 'var(--color-surface-2)', color: 'var(--color-text)', border: '1px solid var(--color-border)' },
-      onclick: () => { currentTournamentId = null; selectedTournamentIds.clear(); renderScheduleView(); }
-    }, '← Voir tous les tournois'),
-  ));
-
-  // Tabs catégorie
-  const tabNav = el('div', { class: 'tabs' },
-    el('button', { class: 'cat-tab tab' + (activeCategory === 'all' ? ' active' : ''),
-      dataset: { cat: 'all' } }, 'Tout'),
-    el('button', { class: 'cat-tab tab' + (activeCategory === 'poules' ? ' active' : ''),
-      dataset: { cat: 'poules' } }, `📋 Poules (${t.matches.length})`),
-    el('button', { class: 'cat-tab tab' + (activeCategory === 'knockout' ? ' active' : ''),
-      dataset: { cat: 'knockout' } }, `🏆 Phase finale (${(t.bracketMatches || []).length})`),
-  );
-  // Bind clicks
-  container.appendChild(tabNav);
-  $$('.cat-tab', tabNav).forEach((b) => {
-    b.addEventListener('click', () => {
-      activeCategory = b.dataset.cat;
-      renderSingleTournamentView();
+// === Génère le planning global (tous tournois confondus) ===
+function generateAllSchedules(ts, cfg) {
+  if (!ts.length) { toast('Aucun tournoi.', 'warn'); return; }
+  let totalAdded = 0;
+  store.setCurrent((s) => {
+    // Reset schedule global (celui du 1er tournoi — convention)
+    // En fait, chaque tournoi a son propre schedule.
+    // Pour la vue globale, on va generer pour CHAQUE tournoi.
+    ts.forEach((t) => {
+      // Source : poules + bracket si dispo
+      const allMatches = [
+        ...t.matches,
+        ...(t.bracketMatches || []),
+      ];
+      if (!allMatches.length) return;
+      const newSched = generateSchedule(allMatches, cfg);
+      // On vide l'ancien schedule et on met le nouveau
+      t.schedule = newSched;
+      t.config = { ...(t.config || {}), nbTerrains: cfg.nbTerrains };
+      totalAdded += newSched.length;
+      // History sur le 1er tournoi (convention)
+      if (t.id === ts[0].id) {
+        s.history.push({
+          at: new Date().toISOString(),
+          type: 'schedule-generated',
+          label: `Planning généré : ${newSched.length} matchs sur ${t.name}`,
+        });
+      }
     });
   });
+  toast(`Planning généré : ${totalAdded} créneaux au total.`, 'success');
+  renderScheduleView();
+}
 
-  // Bouton générer
-  const genBtn = el('div', { class: 'mt-3', style: { display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' } },
-    el('button', { class: 'btn btn-primary',
-      onclick: () => generateScheduleForCategory(t, activeCategory)
-    }, '🎲 Générer le planning'),
-    el('span', { class: 'muted' },
-      `${(t.schedule || []).length} créneau(x) déjà planifié(s)`),
-  );
-  container.appendChild(genBtn);
-
-  // Source des matchs
-  let sourceMatches = [];
-  if (activeCategory === 'poules') sourceMatches = t.matches;
-  else if (activeCategory === 'knockout') sourceMatches = t.bracketMatches || [];
-  else sourceMatches = [...t.matches, ...(t.bracketMatches || [])];
-
-  const scheduled = (t.schedule || []).filter((s) => sourceMatches.some((m) => m.id === s.matchId));
-
-  if (!scheduled.length) {
-    container.appendChild(el('div', { class: 'empty-state' },
-      el('p', {}, 'Aucun créneau. Clique sur "Générer le planning" pour créer les créneaux multi-terrains.')));
-  } else {
-    container.appendChild(renderMultiTerrainTable(scheduled, sourceMatches, t));
-  }
-
-  // Toggle visible côté public
-  const publicToggle = el('label', { class: 'checkbox-group', style: { marginTop: '16px', display: 'inline-flex' } },
-    el('input', { type: 'checkbox',
-      checked: t.config?.schedulePublic !== false,
-      onchange: (e) => {
-        store.setCurrent((s) => { s.config.schedulePublic = e.target.checked; });
-        toast(e.target.checked ? 'Planning visible côté public.' : 'Planning caché côté public.', 'info');
+// === Résout automatiquement les conflits sur tous les tournois ===
+function resolveAllConflicts(ts, cfg) {
+  let totalResolved = 0;
+  store.setCurrent((s) => {
+    ts.forEach((t) => {
+      const allMatches = [...t.matches, ...(t.bracketMatches || [])];
+      if (!t.schedule?.length || !allMatches.length) return;
+      const result = autoResolveConflicts(t.schedule, allMatches, cfg);
+      if (result.resolved > 0) {
+        t.schedule = result.schedule;
+        totalResolved += result.resolved;
       }
-    }),
-    el('span', {}, 'Visible côté public'),
-  );
-  container.appendChild(publicToggle);
-
-  // Conflits
-  const conflicts = detectScheduleConflicts(scheduled, sourceMatches, t.teams);
-  if (conflicts.length) {
-    conflictPanel.appendChild(el('h3', {}, '⚠ Conflits détectés'));
-    conflictPanel.appendChild(el('div', { class: 'alert alert-warn' },
-      el('ul', {}, ...conflicts.map((c) => el('li', {},
-        `${c.team} — ${c.reason} (T${c.slot1.terrain} et T${c.slot2.terrain} à ${c.slot1.time})`)))));
+    });
+  });
+  if (totalResolved > 0) {
+    toast(`${totalResolved} conflit(s) résolu(s) automatiquement.`, 'success');
+  } else {
+    toast('Aucun conflit à résoudre.', 'info');
   }
+  renderScheduleView();
 }
 
 // ================================================================
