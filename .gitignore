@@ -9,3 +9,4 @@ node_modules/
 *.tmp
 /test-data/
 /exports/
+package-lock.json

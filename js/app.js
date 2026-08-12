@@ -109,3 +109,18 @@ export function downloadFile(filename, content, mime = 'application/json') {
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+// "il y a 5 min" en français
+export function timeAgo(date) {
+  const now = Date.now();
+  const diff = Math.floor((now - date.getTime()) / 1000);
+  if (diff < 5) return 'à l\'instant';
+  if (diff < 60) return `il y a ${diff}s`;
+  const min = Math.floor(diff / 60);
+  if (min < 60) return `il y a ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `il y a ${h}h`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `il y a ${d}j`;
+  return date.toLocaleDateString('fr-FR');
+}

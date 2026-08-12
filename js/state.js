@@ -1,32 +1,49 @@
 /* ================================================================
-   STATE.JS — Source de vérité unique + persistance localStorage
-   + sync multi-onglets/multi-machines via BroadcastChannel + storage event
+   STATE.JS — Source de vérité + persistance + multi-tournois
+   + sync multi-onglets/multi-machines
    ================================================================ */
 
-const STORAGE_KEY = 'xapi-cup-state-v1';
+const STORAGE_KEY = 'xapi-cup-state-v2';
 const CHANNEL_NAME = 'xapi-cup-sync';
 
-// État par défaut
+// ---------- Defaults ----------
+const DEFAULT_CONFIG = {
+  nbPoules: 4,
+  qualifiersPerPool: 2,
+  includeConsolante: true,
+  // Planning
+  nbTerrains: 2,
+  matchDurationMin: 20,
+  breakBetweenMin: 5,
+  lunchBreakMin: 60,
+  startTime: '09:00',
+  endTime: '18:00',
+  splitDays: false,        // étaler sur plusieurs jours
+  days: [],                 // [{date, startTime, endTime}] si splitDays
+};
+
+const DEFAULT_TOURNAMENT = () => ({
+  id: 't_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+  name: 'Nouveau tournoi',
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+  teams: [],
+  config: { ...DEFAULT_CONFIG },
+  poules: [],
+  matches: [],                 // matchs de poule
+  brackets: { gold: null, silver: null },
+  bracketMatches: [],          // tous les matchs bracket (Or + Consolante) — pour l'historique
+  schedule: [],                // planning : [{matchId, datetime, terrain, type, ...}]
+  history: [],                 // journal : [{at, type, label, data}]
+  phase: 'setup',              // 'setup' | 'poules' | 'finished-pool' | 'knockout' | 'finished'
+  archived: false,
+});
+
 const DEFAULT_STATE = {
-  version: 1,
-  meta: {
-    edition: '',          // ex: "Xapi Cup 2026"
-    createdAt: null,
-    updatedAt: null,
-  },
-  teams: [],              // [{id, name, color}]
-  config: {
-    nbPoules: 4,
-    qualifiersPerPool: 2, // nombre d'équipes qualifiées par poule
-    includeConsolante: true,
-  },
-  poules: [],             // [[teamId, teamId, ...], ...]
-  matches: [],            // matchs de poule : {id, pouleIdx, teamA, teamB, scoreA, scoreB, finished}
-  brackets: {
-    gold: null,           // arbre Or : {rounds: [[match, ...], ...]}
-    silver: null,         // arbre Consolante
-  },
-  phase: 'setup',         // 'setup' | 'poules' | 'finished-pool' | 'knockout' | 'finished'
+  version: 2,
+  tournaments: [],
+  currentTournamentId: null,
+  meta: { updatedAt: null },
 };
 
 class Store {
@@ -36,27 +53,73 @@ class Store {
     this.channel = null;
     this._initChannel();
     this._initStorageListener();
+    // Migration si pas de tournois
+    if (!this.state.tournaments?.length) {
+      this._migrateV1();
+    }
   }
 
   // ---------- Persistence ----------
   _load() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return structuredClone(DEFAULT_STATE);
-      const parsed = JSON.parse(raw);
-      // merge avec defaults pour rétrocompat
-      return { ...structuredClone(DEFAULT_STATE), ...parsed };
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return { ...structuredClone(DEFAULT_STATE), ...parsed };
+      }
+      // Essayer de migrer depuis l'ancien format
+      const old = localStorage.getItem('xapi-cup-state-v1');
+      if (old) {
+        const parsed = JSON.parse(old);
+        return { ...structuredClone(DEFAULT_STATE), tournaments: [this._v1ToTournament(parsed)], currentTournamentId: null, meta: { updatedAt: new Date().toISOString() } };
+      }
+      return structuredClone(DEFAULT_STATE);
     } catch (e) {
       console.warn('State load error:', e);
       return structuredClone(DEFAULT_STATE);
     }
   }
 
+  _v1ToTournament(v1) {
+    // Convertit l'ancien state v1 en un tournoi v2
+    return {
+      ...DEFAULT_TOURNAMENT(),
+      id: 't_migrated_' + Date.now().toString(36),
+      name: v1.meta?.edition || 'Tournoi importé',
+      teams: v1.teams || [],
+      config: { ...DEFAULT_CONFIG, ...(v1.config || {}) },
+      poules: v1.poules || [],
+      matches: v1.matches || [],
+      brackets: v1.brackets || { gold: null, silver: null },
+      phase: v1.phase || 'setup',
+    };
+  }
+
+  _migrateV1() {
+    const old = localStorage.getItem('xapi-cup-state-v1');
+    if (old) {
+      try {
+        const parsed = JSON.parse(old);
+        const t = this._v1ToTournament(parsed);
+        this.state.tournaments = [t];
+        this.state.currentTournamentId = t.id;
+        this._save();
+        console.info('✅ Migration v1 → v2 OK');
+        return;
+      } catch (e) {
+        console.warn('Migration v1 error:', e);
+      }
+    }
+    // Pas d'ancien state : créer un tournoi par défaut
+    this.state.tournaments = [DEFAULT_TOURNAMENT()];
+    this.state.currentTournamentId = this.state.tournaments[0].id;
+    this._save();
+  }
+
   _save() {
     this.state.meta.updatedAt = new Date().toISOString();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
     this._broadcast({ type: 'state-update' });
-    // Notifier aussi le serveur WebSocket
     if (this.ws && this.ws.readyState === 1) {
       try {
         this.ws.send(JSON.stringify({ type: 'state-update', state: this.state }));
@@ -75,39 +138,30 @@ class Store {
         }
       };
     }
-    // WebSocket optionnel : si on est servi par server/sync-server.js
-    // (ou qu'un autre serveur tourne sur le même host), on s'y connecte
-    // pour synchroniser entre machines.
     if (typeof WebSocket !== 'undefined' && typeof window !== 'undefined') {
       try {
         const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const url = `${proto}//${window.location.host}`;
         const ws = new WebSocket(url);
-        ws.addEventListener('open', () => {
-          this.ws = ws;
-        });
+        ws.addEventListener('open', () => { this.ws = ws; });
         ws.addEventListener('message', (e) => {
           try {
             const data = JSON.parse(e.data);
             if (data?.type === 'state-update' && data.state) {
-              // Recharge depuis le payload distant (le serveur relaie)
               this.state = { ...structuredClone(DEFAULT_STATE), ...data.state };
               this._notify();
             }
           } catch (err) { /* ignore */ }
         });
-        // Reconnexion auto en cas de perte
         ws.addEventListener('close', () => {
           this.ws = null;
           setTimeout(() => this._initChannel(), 3000);
         });
-      } catch (e) { /* ignore si pas de serveur WS */ }
+      } catch (e) { /* ignore */ }
     }
   }
 
   _initStorageListener() {
-    // l'event 'storage' ne se déclenche PAS dans l'onglet qui a écrit,
-    // donc on a besoin de BroadcastChannel pour le même onglet aussi.
     window.addEventListener('storage', (e) => {
       if (e.key === STORAGE_KEY) {
         this.state = this._load();
@@ -129,36 +183,123 @@ class Store {
   }
   _notify() {
     this.listeners.forEach((fn) => {
-      try { fn(this.state); } catch (e) { console.error(e); }
+      try { fn(this.state, this.currentTournament()); } catch (e) { console.error(e); }
     });
   }
 
-  // ---------- Mutations ----------
-  setState(updater) {
-    if (typeof updater === 'function') {
-      updater(this.state);
-    } else if (updater && typeof updater === 'object') {
-      Object.assign(this.state, updater);
+  // ---------- Tournoi helpers ----------
+  currentTournament() {
+    return this.state.tournaments.find((t) => t.id === this.state.currentTournamentId) || null;
+  }
+
+  getTournament(id) {
+    return this.state.tournaments.find((t) => t.id === id) || null;
+  }
+
+  listTournaments() {
+    return this.state.tournaments;
+  }
+
+  switchTournament(id) {
+    if (!this.getTournament(id)) return;
+    this.state.currentTournamentId = id;
+    this._save();
+    this._notify();
+  }
+
+  createTournament(name) {
+    const t = { ...DEFAULT_TOURNAMENT(), name: name || 'Nouveau tournoi' };
+    this.state.tournaments.push(t);
+    this.state.currentTournamentId = t.id;
+    this._save();
+    this._notify();
+    return t;
+  }
+
+  renameTournament(id, name) {
+    const t = this.getTournament(id);
+    if (!t) return;
+    t.name = name;
+    t.updatedAt = new Date().toISOString();
+    this._save();
+    this._notify();
+  }
+
+  archiveTournament(id) {
+    const t = this.getTournament(id);
+    if (!t) return;
+    t.archived = !t.archived;
+    this._save();
+    this._notify();
+  }
+
+  deleteTournament(id) {
+    if (this.state.tournaments.length <= 1) return; // garder au moins 1
+    this.state.tournaments = this.state.tournaments.filter((t) => t.id !== id);
+    if (this.state.currentTournamentId === id) {
+      this.state.currentTournamentId = this.state.tournaments[0].id;
     }
     this._save();
     this._notify();
   }
 
-  // ---------- Équipe helpers ----------
+  duplicateTournament(id) {
+    const t = this.getTournament(id);
+    if (!t) return null;
+    const copy = JSON.parse(JSON.stringify(t));
+    copy.id = 't_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    copy.name = t.name + ' (copie)';
+    copy.archived = false;
+    copy.createdAt = new Date().toISOString();
+    copy.updatedAt = new Date().toISOString();
+    // Reset des résultats
+    copy.matches = copy.matches.map((m) => ({ ...m, scoreA: null, scoreB: null, finished: false, startedAt: null, finishedAt: null }));
+    copy.brackets = { gold: null, silver: null };
+    copy.bracketMatches = [];
+    copy.schedule = [];
+    copy.history = [];
+    copy.phase = 'setup';
+    this.state.tournaments.push(copy);
+    this._save();
+    this._notify();
+    return copy;
+  }
+
+  // ---------- Mutations (toujours sur le tournoi courant) ----------
+  setState(updater) {
+    if (typeof updater === 'function') {
+      updater(this.state);
+    }
+    this._save();
+    this._notify();
+  }
+
+  setCurrent(updater) {
+    const t = this.currentTournament();
+    if (!t) return;
+    if (typeof updater === 'function') {
+      updater(t);
+    }
+    t.updatedAt = new Date().toISOString();
+    this._save();
+    this._notify();
+  }
+
+  // ---------- Équipe helpers (tournament scope) ----------
   addTeam(name) {
     const trimmed = (name || '').trim();
     if (!trimmed) return null;
-    if (this.state.teams.some((t) => t.name.toLowerCase() === trimmed.toLowerCase())) {
-      return null; // déjà présente
-    }
+    const t = this.currentTournament();
+    if (!t) return null;
+    if (t.teams.some((x) => x.name.toLowerCase() === trimmed.toLowerCase())) return null;
     const team = {
       id: 't_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       name: trimmed,
       color: randomTeamColor(),
     };
-    this.setState((s) => {
+    this.setCurrent((s) => {
       s.teams.push(team);
-      if (!s.meta.createdAt) s.meta.createdAt = new Date().toISOString();
+      s.history.push(historyEntry('team-add', `Équipe "${team.name}" ajoutée`, { teamId: team.id }));
     });
     return team;
   }
@@ -173,43 +314,71 @@ class Store {
   }
 
   removeTeam(teamId) {
-    this.setState((s) => {
+    this.setCurrent((s) => {
+      const team = s.teams.find((x) => x.id === teamId);
       s.teams = s.teams.filter((t) => t.id !== teamId);
       s.poules = [];
       s.matches = [];
       s.brackets = { gold: null, silver: null };
+      s.bracketMatches = [];
+      s.schedule = [];
       s.phase = 'setup';
+      if (team) s.history.push(historyEntry('team-remove', `Équipe "${team.name}" retirée`, { teamId }));
     });
   }
 
   renameTeam(teamId, newName) {
     const trimmed = (newName || '').trim();
     if (!trimmed) return;
-    this.setState((s) => {
+    this.setCurrent((s) => {
       const t = s.teams.find((x) => x.id === teamId);
       if (t) t.name = trimmed;
     });
   }
 
+  // ---------- Historique ----------
+  logHistory(type, label, data = {}) {
+    this.setCurrent((s) => {
+      s.history.push(historyEntry(type, label, data));
+      // garder les 500 derniers
+      if (s.history.length > 500) s.history = s.history.slice(-500);
+    });
+  }
+
+  getHistory() {
+    return this.currentTournament()?.history || [];
+  }
+
   // ---------- Reset ----------
+  resetCurrent() {
+    const t = this.currentTournament();
+    if (!t) return;
+    if (!confirm('Tout effacer pour ce tournoi ? Cette action est irréversible.')) return;
+    const idx = this.state.tournaments.indexOf(t);
+    if (idx >= 0) {
+      this.state.tournaments[idx] = { ...DEFAULT_TOURNAMENT(), id: t.id, name: t.name, createdAt: t.createdAt };
+      this._save();
+      this._notify();
+    }
+  }
+
   resetAll() {
-    if (!confirm('Tout effacer ? Cette action est irréversible.')) return;
-    this.state = structuredClone(DEFAULT_STATE);
+    if (!confirm('Supprimer TOUS les tournois ? Action irréversible.')) return;
+    const t = DEFAULT_TOURNAMENT();
+    this.state = { ...structuredClone(DEFAULT_STATE), tournaments: [t], currentTournamentId: t.id };
     this._save();
     this._notify();
   }
 
-  // Import / Export
   exportJSON() {
     return JSON.stringify(this.state, null, 2);
   }
   importJSON(json) {
     try {
       const data = JSON.parse(json);
-      if (!data || typeof data !== 'object' || !Array.isArray(data.teams)) {
-        throw new Error('Format invalide');
-      }
+      if (!data || typeof data !== 'object') throw new Error('Format invalide');
       this.state = { ...structuredClone(DEFAULT_STATE), ...data };
+      if (!this.state.tournaments?.length) throw new Error('Aucun tournoi dans la sauvegarde');
       this._save();
       this._notify();
       return true;
@@ -220,31 +389,21 @@ class Store {
   }
 }
 
-// ---------- Couleurs d'équipes (palette basque + variantes) ----------
+// ---------- History entry ----------
+function historyEntry(type, label, data) {
+  return { at: new Date().toISOString(), type, label, data };
+}
+
+// ---------- Couleurs d'équipes ----------
 const TEAM_PALETTE = [
-  '#c1272d', // rouge basque
-  '#0f5132', // vert basque
-  '#d4a017', // or
-  '#1e6091', // bleu profond
-  '#7b2d8e', // violet
-  '#b85c00', // orange brûlé
-  '#2e7d32', // vert feuille
-  '#5d4037', // brun
-  '#37474f', // ardoise
-  '#ad1457', // framboise
-  '#00695c', // sarcelle
-  '#bf360c', // terre cuite
-  '#1565c0', // azur
-  '#558b2f', // olive
-  '#6a1b9a', // pourpre
-  '#00838f', // paon
-  '#3e2723', // chocolat
-  '#827717', // mousse
+  '#c1272d', '#0f5132', '#d4a017', '#1e6091', '#7b2d8e', '#b85c00',
+  '#2e7d32', '#5d4037', '#37474f', '#ad1457', '#00695c', '#bf360c',
+  '#1565c0', '#558b2f', '#6a1b9a', '#00838f', '#3e2723', '#827717',
 ];
 
 function randomTeamColor() {
   return TEAM_PALETTE[Math.floor(Math.random() * TEAM_PALETTE.length)];
 }
 
-// Singleton
 export const store = new Store();
+export { DEFAULT_TOURNAMENT, DEFAULT_CONFIG };

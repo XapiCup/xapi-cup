@@ -36,6 +36,22 @@
     </div>
   </div>
 
+  <!-- Sélecteur de tournoi (en haut, visible uniquement quand connecté) -->
+  <div class="tournament-bar" id="tournament-bar" style="display:none;">
+    <div class="container tournament-bar-inner">
+      <div class="tournament-bar-label">🏆 Tournoi :</div>
+      <select id="tournament-select" class="select select-compact"></select>
+      <div class="tournament-bar-actions">
+        <button class="btn btn-sm btn-ghost" id="tournament-new-btn" style="background: var(--color-primary); color: #fff; border-color: var(--color-primary);">+ Nouveau</button>
+        <button class="btn btn-sm btn-ghost" id="tournament-duplicate-btn" style="background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border);">📋 Dupliquer</button>
+        <button class="btn btn-sm btn-ghost" id="tournament-rename-btn" style="background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border);">✏️</button>
+        <button class="btn btn-sm btn-ghost" id="tournament-archive-btn" style="background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border);">📦 Archiver</button>
+        <button class="btn btn-sm btn-danger" id="tournament-delete-btn">🗑️</button>
+        <button class="btn btn-sm btn-ghost" id="tournament-manage-btn" style="background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border);">⚙️ Tous les tournois</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Contenu admin (caché tant qu'on n'est pas connecté) -->
   <div id="admin-content" style="display:none;">
     <div class="admin-layout">
@@ -46,12 +62,14 @@
           <li><a href="#section-poules" data-tab="poules">2. Poules & matchs</a></li>
           <li><a href="#section-qualifiers" data-tab="qualifiers">3. Qualification</a></li>
           <li><a href="#section-knockout" data-tab="knockout">4. Phase finale</a></li>
-          <li><a href="#section-export" data-tab="export">5. Export & sauvegarde</a></li>
+          <li><a href="#section-schedule" data-tab="schedule">5. Planning</a></li>
+          <li><a href="#section-history" data-tab="history">6. Historique</a></li>
+          <li><a href="#section-export" data-tab="export">7. Export & sauvegarde</a></li>
         </ul>
         <h2>Raccourcis</h2>
         <ul class="admin-nav">
           <li><a href="viewer.html" target="_blank">↗ Ouvrir la vue publique</a></li>
-          <li><a href="#" id="nav-reset">⚠ Réinitialiser tout</a></li>
+          <li><a href="#" id="nav-reset">⚠ Réinitialiser ce tournoi</a></li>
         </ul>
       </aside>
 
@@ -173,10 +191,71 @@ Aviron Bayonne
           <div id="knockout-container"></div>
         </section>
 
-        <!-- ========== SECTION 5 : EXPORT & SAUVEGARDE ========== -->
+        <!-- ========== SECTION 5 : PLANNING ========== -->
+        <section id="section-schedule" class="admin-section">
+          <h2>5. Planning de matchs</h2>
+          <p class="section-help">Définis les terrains, la durée des matchs, les pauses et l'étalement sur plusieurs jours. Le planning est généré automatiquement.</p>
+
+          <h3>Configuration</h3>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="nb-terrains">Nombre de terrains</label>
+              <input type="number" id="nb-terrains" class="input" min="1" max="10" value="2" />
+            </div>
+            <div class="form-group">
+              <label for="match-duration">Durée d'un match (min)</label>
+              <input type="number" id="match-duration" class="input" min="5" max="60" value="20" />
+            </div>
+            <div class="form-group">
+              <label for="break-between">Pause entre matchs (min)</label>
+              <input type="number" id="break-between" class="input" min="0" max="30" value="5" />
+            </div>
+            <div class="form-group">
+              <label for="lunch-break">Pause déjeuner (min)</label>
+              <input type="number" id="lunch-break" class="input" min="0" max="180" value="60" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="start-time">Heure de début</label>
+              <input type="time" id="start-time" class="input" value="09:00" />
+            </div>
+            <div class="form-group">
+              <label for="end-time">Heure de fin</label>
+              <input type="time" id="end-time" class="input" value="18:00" />
+            </div>
+            <div class="form-group">
+              <label class="checkbox-group">
+                <input type="checkbox" id="toggle-split-days" />
+                <span>Étaler sur plusieurs jours</span>
+              </label>
+            </div>
+          </div>
+
+          <div id="days-container" class="mt-3"></div>
+          <div class="mt-3" id="add-day-row" style="display:none;">
+            <button class="btn btn-sm btn-accent" id="add-day-btn">+ Ajouter un jour</button>
+          </div>
+
+          <div class="mt-3 flex gap-2" style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn btn-primary" id="generate-schedule-btn">📅 Générer le planning</button>
+            <button class="btn btn-ghost" id="export-schedule-btn" style="background: var(--color-primary); color: #fff; border-color: var(--color-primary);">📸 Exporter en image</button>
+          </div>
+
+          <div id="schedule-container" class="mt-3"></div>
+        </section>
+
+        <!-- ========== SECTION 6 : HISTORIQUE ========== -->
+        <section id="section-history" class="admin-section">
+          <h2>6. Historique du tournoi</h2>
+          <p class="section-help">Tous les événements du tournoi, dans l'ordre chronologique inverse. Utile pour suivre ce qui s'est passé en cas de doute.</p>
+          <div id="history-list"></div>
+        </section>
+
+        <!-- ========== SECTION 7 : EXPORT & SAUVEGARDE ========== -->
         <section id="section-export" class="admin-section">
-          <h2>5. Export & sauvegarde</h2>
-          <p class="section-help">Exportez l'arbre final en image, ou téléchargez une sauvegarde complète du tournoi (au format JSON).</p>
+          <h2>7. Export & sauvegarde</h2>
+          <p class="section-help">Exportez l'arbre final en image, ou téléchargez une sauvegarde complète de tous vos tournois (au format JSON).</p>
 
           <h3>Export image</h3>
           <div class="form-row">
@@ -248,6 +327,18 @@ Aviron Bayonne
       <div class="modal-actions">
         <button class="btn btn-ghost" id="pwd-cancel" style="background: var(--color-surface-2); color: var(--color-text);">Annuler</button>
         <button class="btn btn-success" id="pwd-save">Enregistrer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal : gestion de tous les tournois -->
+  <div class="modal-backdrop" id="tournament-modal">
+    <div class="modal" style="max-width: 720px;">
+      <h3>⚙️ Gestion des tournois</h3>
+      <p class="muted" style="margin-top:-8px;">Crée, duplique, renomme, archive ou supprime tes tournois.</p>
+      <div id="tournament-list"></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="tournament-modal-close" style="background: var(--color-surface-2); color: var(--color-text);">Fermer</button>
       </div>
     </div>
   </div>
