@@ -52,6 +52,11 @@ onReady(() => {
   bindDashboardUI();
 
   store.subscribe(() => {
+    // Si le tournoi courant a été supprimé et qu'on était sur sa vue, retour dashboard
+    if (view === 'tournament' && !store.currentTournament()) {
+      showDashboardView();
+      return;
+    }
     if (view === 'dashboard') renderDashboard();
     else renderTournamentPage();
   });

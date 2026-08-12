@@ -234,10 +234,10 @@ class Store {
   }
 
   deleteTournament(id) {
-    if (this.state.tournaments.length <= 1) return; // garder au moins 1
     this.state.tournaments = this.state.tournaments.filter((t) => t.id !== id);
     if (this.state.currentTournamentId === id) {
-      this.state.currentTournamentId = this.state.tournaments[0].id;
+      // Si on a supprimé le tournoi courant, prendre le 1er dispo (ou null si aucun)
+      this.state.currentTournamentId = this.state.tournaments[0]?.id || null;
     }
     this._save();
     this._notify();

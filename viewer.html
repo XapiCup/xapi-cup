@@ -71,11 +71,18 @@
     </section>
   </main>
 
+  <!-- Bouton flottant pour afficher/masquer le feed live -->
+  <button class="live-feed-toggle" id="live-feed-toggle" title="Afficher/masquer l'actu du tournoi" aria-label="Feed live">
+    🔔
+    <span class="live-feed-toggle-badge" id="live-feed-toggle-badge" style="display:none;">0</span>
+  </button>
+
   <!-- Feed live (collatéral fixe) -->
   <aside class="live-feed-aside" id="live-feed-aside">
     <div class="live-feed-header">
       <span class="live-pill">🔴 EN DIRECT</span>
       <h3>Actu du tournoi</h3>
+      <button class="live-feed-close" id="live-feed-close" aria-label="Fermer">×</button>
     </div>
     <div id="live-feed" class="live-feed-list"></div>
   </aside>

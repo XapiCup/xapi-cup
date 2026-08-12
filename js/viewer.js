@@ -18,7 +18,6 @@ onReady(() => {
       t.classList.add('active');
       const target = t.dataset.viewerTab;
       $$('.tab-content').forEach((c) => c.classList.remove('active'));
-      $$('.tab-content').forEach((c) => c.classList.remove('active'));
       $('#tab-' + target)?.classList.add('active');
     });
   });
@@ -30,8 +29,33 @@ onReady(() => {
       renderKnockout();
     });
   });
-  store.subscribe(renderAll);
+
+  // Feed live : toggle
+  const aside = $('#live-feed-aside');
+  const toggle = $('#live-feed-toggle');
+  const close = $('#live-feed-close');
+  toggle?.addEventListener('click', () => aside?.classList.toggle('collapsed'));
+  close?.addEventListener('click', () => aside?.classList.add('collapsed'));
+  // Badge : compteur de nouveaux events
+  let lastLen = 0;
+  function updateFeedBadge() {
+    const items = store.currentTournament()?.history || [];
+    if (items.length > lastLen) {
+      const newCount = items.length - lastLen;
+      const badge = $('#live-feed-toggle-badge');
+      if (badge && aside?.classList.contains('collapsed')) {
+        badge.textContent = newCount > 9 ? '9+' : newCount;
+        badge.style.display = 'flex';
+      }
+    }
+    lastLen = items.length;
+  }
+  store.subscribe(() => {
+    renderAll(store.state);
+    updateFeedBadge();
+  });
   renderAll(store.state);
+  updateFeedBadge();
 });
 
 function renderAll() {
@@ -171,21 +195,25 @@ function renderSchedule(t) {
     slotsByDate.get(s.date).push(s);
   });
 
+  // Détermine le nombre de terrains max utilisé (ou nb configuré)
+  const nbTerrains = Math.max(
+    t.config?.nbTerrains || 1,
+    ...t.schedule.map((s) => s.terrain)
+  );
+
   Array.from(slotsByDate.entries()).sort(([a],[b]) => a.localeCompare(b)).forEach(([date, daySlots]) => {
     container.appendChild(el('h3', { style: { color: 'var(--color-primary)', marginTop: '20px' } },
       new Date(date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })));
     const table = el('table', { class: 'standings-table' });
     table.appendChild(el('thead', {}, el('tr', {},
       el('th', {}, 'Heure'),
-      el('th', {}, 'T1'),
-      el('th', {}, 'T2'),
-      el('th', {}, 'T3'),
+      ...Array.from({ length: nbTerrains }, (_, i) => el('th', {}, `T${i + 1}`)),
     )));
     const tb = el('tbody');
     daySlots.forEach((slot) => {
       const tr = el('tr');
       tr.appendChild(el('td', { style: { fontWeight: 600, verticalAlign: 'top' } }, slot.time));
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < nbTerrains; i++) {
         const sc = slot.terrains.find((s) => s.terrain === i + 1);
         if (!sc) { tr.appendChild(el('td', { class: 'muted', style: { color: '#aaa' } }, '—')); continue; }
         const m = matchesMap.get(sc.matchId);

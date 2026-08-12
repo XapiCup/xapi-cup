@@ -323,6 +323,11 @@ function renderScheduleView() {
 // ================================================================
 function renderMultiTerrainTable(schedule, matches, t) {
   const matchById = new Map(matches.map((m) => [m.id, m]));
+  // Détermine le nombre de terrains max utilisé (ou nb configuré)
+  const nbTerrains = Math.max(
+    t?.config?.nbTerrains || 1,
+    ...schedule.map((s) => s.terrain)
+  );
   // Group par (date, time) → slots
   const slotsByDT = new Map();
   schedule.forEach((s) => {
@@ -338,14 +343,14 @@ function renderMultiTerrainTable(schedule, matches, t) {
   table.appendChild(el('thead', {}, el('tr', {},
     el('th', {}, 'Date'),
     el('th', {}, 'Heure'),
-    ...Array.from({ length: 3 }, (_, i) => el('th', {}, `Terrain ${i + 1}`)),
+    ...Array.from({ length: nbTerrains }, (_, i) => el('th', {}, `T${i + 1}`)),
   )));
   const tb = el('tbody');
   slots.forEach((slot) => {
     const tr = el('tr', { class: 'schedule-slot' });
     tr.appendChild(el('td', {}, slot.date));
     tr.appendChild(el('td', { style: { fontWeight: 600 } }, slot.time));
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < nbTerrains; i++) {
       const sc = slot.terrains.find((s) => s.terrain === i + 1);
       if (!sc) {
         tr.appendChild(el('td', { class: 'muted', style: { color: '#aaa' } }, '—'));
