@@ -364,11 +364,43 @@ function buildTournamentCard(t) {
   };
   const [label, badgeClass] = phaseLabels[t.phase] || ['—', 'badge-setup'];
 
-  const card = el('div', { class: 't-card' + (t.archived ? ' archived' : '') },
+  // Détection chevauchement (badge warning)
+  const overlaps = store.detectOverlaps().filter((o) => o.a.id === t.id || o.b.id === t.id);
+  const hasOverlap = overlaps.length > 0;
+
+  // Format date
+  const dateStr = t.date ? new Date(t.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
+  const dateRange = t.date && t.endDate && t.endDate !== t.date
+    ? `${new Date(t.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} → ${new Date(t.endDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}`
+    : dateStr;
+
+  const card = el('div', {
+    class: 't-card' + (t.archived ? ' archived' : '') + (hasOverlap ? ' t-card-overlap' : '') + (t.public === false ? ' t-card-private' : '')
+  },
     el('div', { class: 't-card-header' },
       el('h3', { class: 't-card-name' }, t.name),
       el('span', { class: `t-card-badge ${badgeClass}` }, label),
     ),
+    el('div', { class: 't-card-meta' },
+      el('button', {
+        class: 't-card-date' + (!t.date ? ' t-card-date--empty' : ''),
+        onclick: (e) => { e.stopPropagation(); promptDate(t); },
+        title: 'Cliquer pour définir la date',
+      },
+        dateRange ? (el('span', {}, '📅 ' + dateRange)) : (el('span', {}, '📅 + définir date')),
+      ),
+      el('button', {
+        class: 't-card-visibility' + (t.public === false ? ' t-card-visibility--off' : ''),
+        onclick: (e) => { e.stopPropagation(); togglePublic(t); },
+        title: t.public === false ? 'Rendre public' : 'Masquer du côté public',
+      }, t.public === false ? '🔒 Privé' : '🌐 Public'),
+    ),
+    hasOverlap ? el('div', { class: 't-card-warning' },
+      '⚠️ Chevauche avec ',
+      el('strong', {}, overlaps.map(o => (o.a.id === t.id ? o.b.name : o.a.name)).join(', ')),
+      el('br'),
+      el('span', { class: 'muted' }, overlaps[0].range),
+    ) : null,
     el('div', { class: 't-card-stats' },
       el('div', { class: 't-card-stat' },
         el('div', { class: 't-card-stat-num' }, String(t.teams.length)),
@@ -403,6 +435,26 @@ function buildTournamentCard(t) {
   // Click sur la card (hors boutons) = ouvrir
   card.addEventListener('click', () => openTournament(t.id));
   return card;
+}
+
+function promptDate(t) {
+  const date = prompt('Date du tournoi (yyyy-mm-dd) :', t.date || '');
+  if (date === null) return;
+  const endDate = t.endDate && t.endDate !== t.date ? prompt('Date de fin (yyyy-mm-dd, optionnel) :', t.endDate || '') : null;
+  if (date === '' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    toast('Date invalide (format yyyy-mm-dd).', 'warn');
+    return;
+  }
+  store.setTournamentDate(t.id, date, endDate);
+  toast('Date mise à jour ✓', 'success');
+  renderDashboard();
+}
+
+function togglePublic(t) {
+  const newPublic = t.public === false;
+  store.setTournamentPublic(t.id, newPublic);
+  toast(newPublic ? 'Visible côté public' : 'Masqué du public', 'success');
+  renderDashboard();
 }
 
 function openTournament(id) {

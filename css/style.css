@@ -1075,6 +1075,109 @@ a:hover { text-decoration: underline; }
 }
 .t-card-actions .btn { flex: 1; min-width: 70px; }
 
+/* ----- Card meta (date, visibilité, chevauchement) ----- */
+.t-card-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+  font-size: 0.85rem;
+}
+.t-card-date, .t-card-visibility {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  transition: var(--transition);
+}
+.t-card-date:hover, .t-card-visibility:hover { border-color: var(--color-primary); }
+.t-card-date--empty {
+  border-style: dashed;
+  color: var(--color-muted);
+}
+.t-card-visibility--off {
+  background: #fff4e1;
+  border-color: #f0ad4e;
+  color: #8a5a00;
+}
+.t-card-warning {
+  background: #fff8e1;
+  border: 1px solid #f0ad4e;
+  border-left: 4px solid #c1272d;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 8px 0;
+  font-size: 0.85rem;
+  color: #5a4500;
+}
+.t-card-overlap { border-left: 4px solid #c1272d !important; }
+.t-card-private { opacity: 0.85; }
+.t-card-private::before {
+  content: '🔒';
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 1.1rem;
+}
+
+/* ----- Tournament selector (viewer public) ----- */
+.tournament-selector {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 24px;
+}
+.tournament-selector-label {
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--color-text);
+}
+.tournament-selector-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.tournament-selector-card {
+  text-align: left;
+  background: var(--color-surface-2);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: var(--transition);
+  color: var(--color-text);
+}
+.tournament-selector-card:hover {
+  border-color: var(--color-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+.tournament-selector-card.active {
+  border-color: var(--color-primary);
+  background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%);
+}
+.tournament-selector-name {
+  font-weight: 700;
+  font-size: 1.05rem;
+  margin-bottom: 6px;
+}
+.tournament-selector-date, .tournament-selector-location {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  margin-top: 4px;
+}
+.tournament-selector-meta {
+  margin-top: 8px;
+  font-size: 0.8rem;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
 .t-card-create {
   background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-2) 100%);
   color: #fff;
@@ -1226,14 +1329,43 @@ a:hover { text-decoration: underline; }
 .tab-content { display: none; padding-top: 24px; }
 .tab-content.active { display: block; animation: fadeIn 300ms ease; }
 
-/* ----- Bracket 3rd place match ----- */
+/* ----- Bracket 3rd place match (discret) ----- */
 .bracket-round.bracket-third {
-  border-left: 3px solid #cd7f32;
-  padding-left: 12px;
-  margin-top: 16px;
+  margin-top: 12px;
+  padding-top: 0;
+  opacity: 0.7;            /* discret */
+  transform: scale(0.92); /* légèrement plus petit */
+  transform-origin: top left;
 }
-.bracket-third .bracket-round-title {
-  color: #cd7f32 !important;
+.bracket-third .bracket-round-title,
+.bracket-round-title--minor {
+  color: #888 !important;
+  font-size: 0.7rem !important;
+  font-weight: 500 !important;
+}
+.bracket-match--third {
+  border-style: dashed !important;
+  border-color: #ccc !important;
+  background: #fafafa !important;
+}
+.bracket-match--third:hover { transform: scale(0.94); }  /* annule le translateX */
+
+/* ----- Bracket finale (mise en avant) ----- */
+.bracket-round.bracket-round--final .bracket-match {
+  border: 3px solid var(--color-gold);
+  box-shadow: 0 0 0 1px var(--color-gold), 0 4px 14px rgba(212, 160, 23, 0.3);
+  transform: scale(1.05);
+}
+.bracket-round-title--final {
+  color: var(--color-gold) !important;
+  font-size: 1rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.15em !important;
+}
+.bracket-match--is-final .bracket-team {
+  font-weight: 700;
+  font-size: 1.05rem;
+  padding: 8px 12px;
 }
 
 /* ----- Résultats (admin) ----- */

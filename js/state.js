@@ -25,6 +25,10 @@ const DEFAULT_CONFIG = {
 const DEFAULT_TOURNAMENT = () => ({
   id: 't_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
   name: 'Nouveau tournoi',
+  date: null,                // date ISO du tournoi (yyyy-mm-dd), utilisé pour détecter les chevauchements
+  endDate: null,             // date de fin (optionnel, si tournoi multi-jours)
+  location: '',              // lieu du tournoi
+  public: true,              // visible côté public (viewer)
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   teams: [],
@@ -56,6 +60,17 @@ class Store {
     // Migration si pas de tournois
     if (!this.state.tournaments?.length) {
       this._migrateV1();
+    }
+    // Migration v2 -> v3 : champs date / public
+    if (this.state.version < 3) {
+      this.state.tournaments.forEach((t) => {
+        if (t.date === undefined) t.date = null;
+        if (t.endDate === undefined) t.endDate = null;
+        if (t.location === undefined) t.location = '';
+        if (t.public === undefined) t.public = true;
+      });
+      this.state.version = 3;
+      this._save();
     }
   }
 
@@ -223,6 +238,71 @@ class Store {
     t.updatedAt = new Date().toISOString();
     this._save();
     this._notify();
+  }
+
+  setTournamentDate(id, date, endDate = null, location = null) {
+    const t = this.getTournament(id);
+    if (!t) return;
+    t.date = date || null;
+    if (endDate !== null) t.endDate = endDate || null;
+    if (location !== null) t.location = location;
+    t.updatedAt = new Date().toISOString();
+    this._save();
+    this._notify();
+  }
+
+  setTournamentPublic(id, isPublic) {
+    const t = this.getTournament(id);
+    if (!t) return;
+    t.public = !!isPublic;
+    t.updatedAt = new Date().toISOString();
+    this._save();
+    this._notify();
+  }
+
+  /**
+   * Liste les tournois publics (visibles côté viewer), triés par date ASC.
+   * Si un tournoi n'a pas de date, il apparaît en premier (sans tri).
+   */
+  listPublicTournaments() {
+    return this.state.tournaments
+      .filter((t) => t.public !== false)
+      .filter((t) => !t.archived)
+      .sort((a, b) => {
+        if (!a.date && !b.date) return 0;
+        if (!a.date) return -1;
+        if (!b.date) return 1;
+        return a.date.localeCompare(b.date);
+      });
+  }
+
+  /**
+   * Détecte les chevauchements entre 2 tournois (mêmes jour ou jours qui se chevauchent).
+   * Renvoie un array de paires {a, b, type} où type ∈ 'same-day' | 'overlap'.
+   */
+  detectOverlaps(tournaments = this.state.tournaments) {
+    const overlaps = [];
+    for (let i = 0; i < tournaments.length; i++) {
+      const a = tournaments[i];
+      if (!a.date) continue;
+      for (let j = i + 1; j < tournaments.length; j++) {
+        const b = tournaments[j];
+        if (!b.date) continue;
+        const aStart = a.date;
+        const aEnd = a.endDate || a.date;
+        const bStart = b.date;
+        const bEnd = b.endDate || b.date;
+        // Chevauchement si [aStart, aEnd] intersecte [bStart, bEnd]
+        if (aStart <= bEnd && bStart <= aEnd) {
+          overlaps.push({
+            a, b,
+            type: aStart === bStart || aEnd === bEnd || aStart === bEnd || bStart === aEnd ? 'same-day' : 'overlap',
+            range: `du ${aStart}${aEnd !== aStart ? ` au ${aEnd}` : ''} / du ${bStart}${bEnd !== bStart ? ` au ${bEnd}` : ''}`,
+          });
+        }
+      }
+    }
+    return overlaps;
   }
 
   archiveTournament(id) {

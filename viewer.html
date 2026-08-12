@@ -26,8 +26,13 @@
   </header>
 
   <main>
+    <!-- Sélecteur de tournoi (si plusieurs publics) -->
+    <section class="container" id="tournament-selector-section" style="padding-top: 30px; display:none;">
+      <div class="tournament-selector" id="tournament-selector"></div>
+    </section>
+
     <!-- Bandeau live -->
-    <section class="container" style="padding-top: 30px;">
+    <section class="container" id="viewer-header" style="padding-top: 30px;">
       <div class="flex-between" style="flex-wrap: wrap; gap: 12px;">
         <div>
           <h1 style="margin: 0;" id="page-title">Xapi Cup</h1>
@@ -37,36 +42,32 @@
       </div>
     </section>
 
-    <!-- Onglets : Poules / Phase finale -->
-    <section class="container" style="margin-top: 24px;">
-      <div class="tabs">
-        <button class="tab active" data-viewer-tab="poules">⚽ Poules &amp; classements</button>
-        <button class="tab" data-viewer-tab="knockout">🏆 Phase finale</button>
-      </div>
-    </section>
-
+    <!-- Onglets principaux : Tournoi en direct / Planning -->
     <nav class="viewer-tabs container" id="viewer-tabs">
       <button class="v-tab active" data-viewer-tab="live">🔴 Tournoi en direct</button>
       <button class="v-tab" data-viewer-tab="schedule">📅 Planning</button>
     </nav>
 
-    <!-- POULE -->
+    <!-- TOURNOI EN DIRECT -->
     <section class="container tab-content active" id="tab-live">
-      <div id="poules-container"></div>
-    </section>
-
-    <!-- PHASE FINALE -->
-    <section class="container tab-content" id="tab-knockout">
-      <div class="tabs" style="margin-bottom: 0;">
-        <button class="tab active" data-bracket-tab="gold">🥇 Tableau Or</button>
-        <button class="tab" data-bracket-tab="silver">🥈 Consolante</button>
+      <div class="tabs">
+        <button class="tab active" data-viewer-subtab="poules">⚽ Poules &amp; classements</button>
+        <button class="tab" data-viewer-subtab="knockout">🏆 Phase finale</button>
       </div>
-      <div id="knockout-container" style="margin-top: 20px;"></div>
+      <div id="viewer-subtab-poules">
+        <div id="poules-container"></div>
+      </div>
+      <div id="viewer-subtab-knockout" style="display:none;">
+        <div class="tabs" style="margin-bottom: 0;">
+          <button class="tab active" data-bracket-tab="gold">🥇 Tableau Or</button>
+          <button class="tab" data-bracket-tab="silver">🥈 Consolante</button>
+        </div>
+        <div id="knockout-container" style="margin-top: 20px;"></div>
+      </div>
     </section>
-    </div>
 
     <!-- PLANNING (onglet séparé) -->
-    <section class="container tab-content" id="tab-schedule">
+    <section class="container tab-content" id="tab-schedule" style="display:none;">
       <div id="schedule-public"></div>
     </section>
   </main>

@@ -144,24 +144,27 @@ export function renderBracket(bracket, state, opts = {}) {
   wrapper.appendChild(titleRow);
 
   const tree = el('div', { class: 'bracket' });
+  const totalRounds = bracket.rounds.length;
   bracket.rounds.forEach((round, rIdx) => {
-    const roundDiv = el('div', { class: 'bracket-round' });
-    roundDiv.appendChild(el('div', { class: 'bracket-round-title' },
-      getRoundLabel(rIdx, bracket.rounds.length)
-    ));
+    const isFinal = rIdx === totalRounds - 1;
+    const roundDiv = el('div', { class: 'bracket-round' + (isFinal ? ' bracket-round--final' : '') });
+    const titleClass = isFinal ? 'bracket-round-title bracket-round-title--final' : 'bracket-round-title';
+    roundDiv.appendChild(el('div', { class: titleClass }, getRoundLabel(rIdx, totalRounds)));
     round.forEach((match, mIdx) => {
-      roundDiv.appendChild(renderBracketMatch(match, state, rIdx, mIdx, editable, _onMatchClick, onWinnerSet));
+      const matchClass = isFinal ? ' bracket-match--is-final' : '';
+      roundDiv.appendChild(renderBracketMatch(match, state, rIdx, mIdx, editable, _onMatchClick, onWinnerSet, matchClass));
     });
     tree.appendChild(roundDiv);
   });
 
-  // Petite finale (3e place) — match séparé, affiché après tous les rounds
+  // Petite finale (3e place) — affichée en bas, plus discrète que la finale.
+  // Note : la finale reste le match le plus important visuellement (taille + or).
   if (bracket.thirdPlaceMatch) {
     const thirdRound = el('div', { class: 'bracket-round bracket-third' });
-    thirdRound.appendChild(el('div', { class: 'bracket-round-title' }, '🥉 Petite finale'));
+    thirdRound.appendChild(el('div', { class: 'bracket-round-title bracket-round-title--minor' }, '3e place'));
     const m = bracket.thirdPlaceMatch;
     const wrap = el('div', {
-      class: 'bracket-match'
+      class: 'bracket-match bracket-match--third'
         + (m.scoreA != null && m.scoreB != null ? ' has-score' : '')
         + (m.winnerSlot != null ? ' winner-decided' : '')
         + (m.slotA == null || m.slotB == null ? ' not-ready' : ''),
@@ -193,7 +196,7 @@ export function renderBracket(bracket, state, opts = {}) {
   return wrapper;
 }
 
-function renderBracketMatch(match, state, rIdx, mIdx, editable, onClick, onWinnerSet) {
+function renderBracketMatch(match, state, rIdx, mIdx, editable, onClick, onWinnerSet, extraClass = '') {
   const tA = match.slotA ? teamById(state, match.slotA) : null;
   const tB = match.slotB ? teamById(state, match.slotB) : null;
 
@@ -201,7 +204,7 @@ function renderBracketMatch(match, state, rIdx, mIdx, editable, onClick, onWinne
   const decided = match.winnerSlot != null;
 
   const wrap = el('div', {
-    class: 'bracket-match'
+    class: 'bracket-match' + extraClass
       + (hasScore ? ' has-score' : '')
       + (decided ? ' winner-decided' : ''),
     dataset: { round: rIdx, match: mIdx, kind: 'bracket-match' },
