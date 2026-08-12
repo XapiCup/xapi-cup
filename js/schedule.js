@@ -13,7 +13,7 @@ import { isAuthenticated, renderLoginScreen, bindLogoutButton } from './auth.js'
 // ================================================================
 let editingSlot = null;
 
-const GLOBAL_CONFIG_KEY = 'xapi-cup-schedule-config-v1';
+const GLOBAL_CONFIG_KEY = 'xapi-cup-schedule-config-v2';
 const DEFAULT_CONFIG = {
   nbTerrains: 4,
   matchDurationMin: 20,
@@ -21,7 +21,8 @@ const DEFAULT_CONFIG = {
   startTime: '09:00',
   endTime: '18:00',
   splitDays: false,
-  days: [], // [{date, startTime, endTime}]
+  phase: 'poules',     // 'poules' (par defaut) ou 'all' ou 'knockout'
+  days: [], // [{date, startTime, endTime}] -- active uniquement si splitDays=true
 };
 
 function getGlobalConfig() {
@@ -149,36 +150,47 @@ function bindUI() {
   $('#start-date')?.addEventListener('change', renderDaysList);
 
   // Sauvegarder config
-  $('#save-config-btn')?.addEventListener('click', () => {
-    const cfg = readConfigFromInputs();
-    saveGlobalConfig(cfg);
-    store.setCurrent((s) => {
-      s.config.nbTerrains = cfg.nbTerrains;
-      s.config.matchDurationMin = cfg.matchDurationMin;
-      s.config.breakBetweenMin = cfg.breakBetweenMin;
-      s.config.startTime = cfg.startTime;
-      s.config.endTime = cfg.endTime;
-      s.config.splitDays = cfg.splitDays;
-      s.config.days = cfg.days;
+    $('#save-config-btn')?.addEventListener('click', () => {
+      const cfg = readConfigFromInputs();
+      saveGlobalConfig(cfg);
+      store.setCurrent((s) => {
+        s.config.nbTerrains = cfg.nbTerrains;
+        s.config.matchDurationMin = cfg.matchDurationMin;
+        s.config.breakBetweenMin = cfg.breakBetweenMin;
+        s.config.startTime = cfg.startTime;
+        s.config.endTime = cfg.endTime;
+        s.config.splitDays = cfg.splitDays;
+        s.config.days = cfg.days;
+        s.config.phase = cfg.phase;
+      });
+      renderScheduleView();
     });
-    renderScheduleView();
-  });
 
-  // Reset config
-  $('#reset-config-btn')?.addEventListener('click', () => {
-    if (!confirm('Réinitialiser la config aux valeurs par défaut ?')) return;
-    resetConfig();
-    renderConfigInputs();
-    renderScheduleView();
-  });
+    // Generer le planning global
+    $('#generate-all-btn')?.addEventListener('click', () => {
+      const ts = store.listTournaments().filter((t) => !t.archived);
+      if (!ts.length) { toast('Aucun tournoi.', 'warn'); return; }
+      generateAllSchedules(ts, getGlobalConfig());
+      renderScheduleView();
+    });
 
-  // Generer le planning global
-  $('#generate-all-btn')?.addEventListener('click', () => {
-    const ts = store.listTournaments().filter((t) => !t.archived);
-    if (!ts.length) { toast('Aucun tournoi.', 'warn'); return; }
-    generateAllSchedules(ts, getGlobalConfig());
-    renderScheduleView();
-  });
+    // Integrer les phases finales (une fois les poules terminees)
+    $('#integrate-knockout-btn')?.addEventListener('click', () => {
+      const ts = store.listTournaments().filter((t) => !t.archived);
+      if (!ts.length) { toast('Aucun tournoi.', 'warn'); return; }
+      const cfgWithKnockout = { ...getGlobalConfig(), phase: 'knockout' };
+      generateAllSchedules(ts, cfgWithKnockout);
+      renderScheduleView();
+    });
+
+    // Integrer toutes les phases (poules + finales d'un coup)
+    $('#integrate-all-btn')?.addEventListener('click', () => {
+      const ts = store.listTournaments().filter((t) => !t.archived);
+      if (!ts.length) { toast('Aucun tournoi.', 'warn'); return; }
+      const cfgAll = { ...getGlobalConfig(), phase: 'all' };
+      generateAllSchedules(ts, cfgAll);
+      renderScheduleView();
+    });
 
   // Resoudre les conflits
   $('#resolve-conflicts-btn')?.addEventListener('click', () => {
@@ -260,13 +272,50 @@ function renderTerrainView() {
     } else if (allSchedules.length > 0) {
       conflictPanel.appendChild(el('div', { class: 'alert alert-info' }, '✅ Aucun conflit détecté.'));
     }
+
+    // Prévisualisation : phases finales non intégrées
+    const totalBracket = ts.reduce((acc, t) => acc + (t.bracketMatches?.length || 0), 0);
+    const plannedBracket = new Set();
+    ts.forEach((t) => (t.schedule || []).forEach((s) => {
+      if ((t.bracketMatches || []).some((bm) => bm.id === s.matchId)) plannedBracket.add(s.matchId + '@' + t.id);
+    }));
+    const unPlannedBracket = ts.reduce((acc, t) => acc + (t.bracketMatches || []).filter((m) => !plannedBracket.has(m.id + '@' + t.id)).length, 0);
+    if (totalBracket > 0 && unPlannedBracket > 0) {
+      conflictPanel.appendChild(el('div', { class: 'alert alert-info' },
+        el('strong', {}, '🎯 Phase finale : '),
+        `${totalBracket - unPlannedBracket}/${totalBracket} match(s) intégré(s) au planning. `,
+        el('div', { style: { marginTop: '8px' } },
+          `${unPlannedBracket} match(s) en attente. `,
+          el('button', {
+            class: 'btn btn-primary btn-sm',
+            style: { marginLeft: '8px' },
+            onclick: () => { $('#integrate-knockout-btn')?.click(); },
+          }, '📅 Intégrer au planning'),
+        ),
+      ));
+    }
   }
 
   if (allSchedules.length === 0) {
+    // Pas de creneaux : proposer l'integration des phases finales s'il y en a
+    const totalBracket = ts.reduce((acc, t) => acc + (t.bracketMatches?.length || 0), 0);
+    const totalPool = ts.reduce((acc, t) => acc + t.matches.length, 0);
     container.appendChild(el('div', { class: 'empty-state' },
       el('div', { class: 'empty-icon' }, '📅'),
       el('h3', {}, 'Aucun planning généré'),
-      el('p', { class: 'muted' }, 'Clique sur "🎲 Générer le planning global" pour créer les créneaux multi-terrains.')));
+      el('p', { class: 'muted' }, 'Clique sur "🎲 Générer le planning global" pour créer les créneaux des matchs de poules.')));
+    if (totalPool > 0) {
+      const preview = el('div', { class: 'alert alert-info' },
+        el('strong', {}, '🎯 Matchs à planifier :'),
+        el('div', { style: { marginTop: '8px' } },
+          el('div', {}, `📋 ${totalPool} match(s) de poules (clique sur "🎲 Générer le planning global")`),
+        ),
+      );
+      if (totalBracket > 0) {
+        preview.appendChild(el('div', {}, `🏆 ${totalBracket} match(s) de phase finale (générés après les poules)`));
+      }
+      container.appendChild(preview);
+    }
     return;
   }
 
@@ -326,20 +375,37 @@ function renderTerrainView() {
 // ================================================================
 function generateAllSchedules(ts, cfg) {
   if (!ts.length) { toast('Aucun tournoi.', 'warn'); return; }
-  let totalAdded = 0;
 
-  // 1) Construire un pool global : tous les matchs de tous les tournois, tagues par _tid
+  const phase = cfg.phase || 'poules';
+  let totalAdded = 0;
+  let totalBracketSkipped = 0;
+
+  // 1) Filtrer les matchs selon la phase demandee
   const pool = [];
   const matchToTournament = new Map();
   ts.forEach((t) => {
     const allMatches = [...t.matches, ...(t.bracketMatches || [])];
     if (!allMatches.length) return;
     allMatches.forEach((m) => {
+      const isBracket = !('pouleIdx' in m) && !m.pouleIdx && m.slotA && m.slotA.length > 8;
+      // Heuristique : un match de bracket a un id type 'semi1' ou 'final' (pas 'm0_1')
+      // Le plus sur : on regarde si la clef est dans bracketMatches
+      const inBracketList = (t.bracketMatches || []).some((bm) => bm.id === m.id);
+      // Poules : match avec pouleIdx defini
+      const isPoolMatch = m.pouleIdx !== undefined;
+      let include = false;
+      if (phase === 'poules') include = isPoolMatch && !inBracketList;
+      else if (phase === 'knockout') include = inBracketList;
+      else include = true;
+      if (!include) {
+        if (inBracketList && phase === 'poules') totalBracketSkipped++;
+        return;
+      }
       pool.push({ ...m, _tid: t.id });
       matchToTournament.set(m.id, t.id);
     });
   });
-  if (!pool.length) { toast('Aucun match à planifier.', 'warn'); return; }
+  if (!pool.length) { toast('Aucun match de ' + phase + ' a planifier.', 'warn'); return; }
 
   // 2) Generer UN planning global sur le pool (1 match / terrain / creneau, pas 2x la meme equipe)
   const matchCfg = {
@@ -354,7 +420,7 @@ function generateAllSchedules(ts, cfg) {
   const resolved = autoResolveConflicts(globalSched, pool, cfg);
   const finalSched = resolved.schedule;
 
-  // 4) Regrouper par tournoi et assigner dans t.schedule
+  // 4) Regrouper par tournoi et assigner dans t.schedule (en CONSERVANT les creneaux existants non concernes)
   const byTournament = new Map();
   ts.forEach((t) => byTournament.set(t.id, []));
   finalSched.forEach((s) => {
@@ -368,19 +434,36 @@ function generateAllSchedules(ts, cfg) {
 
   store.setCurrent((s) => {
     ts.forEach((t) => {
-      t.schedule = byTournament.get(t.id) || [];
+      // Conserver les anciens creneaux qui ne sont pas dans pool (ex: bracket quand phase=poules)
+      const oldKept = (t.schedule || []).filter((sc) => {
+        const isBracketMatch = (t.bracketMatches || []).some((bm) => bm.id === sc.matchId);
+        if (phase === 'poules' && isBracketMatch) return true;
+        if (phase === 'knockout' && !isBracketMatch) return true;
+        return false;
+      });
+      const newKept = byTournament.get(t.id) || [];
+      // Fusionner sans doublons (par matchId)
+      const seen = new Set();
+      const merged = [];
+      oldKept.forEach((x) => { if (!seen.has(x.matchId)) { seen.add(x.matchId); merged.push(x); } });
+      newKept.forEach((x) => { if (!seen.has(x.matchId)) { seen.add(x.matchId); merged.push(x); } });
+      t.schedule = merged;
       t.config = { ...(t.config || {}), nbTerrains: cfg.nbTerrains };
-      totalAdded += t.schedule.length;
+      totalAdded += newKept.length;
     });
     if (ts[0]) {
       s.history.push({
         at: new Date().toISOString(),
         type: 'schedule-generated',
-        label: `Planning généré : ${finalSched.length} matchs sur ${ts.length} tournois`,
+        label: `Planning ${phase} genere : ${finalSched.length} matchs sur ${ts.length} tournois`,
       });
     }
   });
-  toast(`Planning généré : ${totalAdded} créneaux sur ${ts.length} tournoi${ts.length > 1 ? 's' : ''}.`, 'success');
+  let msg = `Planning ${phase} : ${totalAdded} creneaux sur ${ts.length} tournoi${ts.length > 1 ? 's' : ''}.`;
+  if (phase === 'poules' && totalBracketSkipped > 0) {
+    msg += ` (${totalBracketSkipped} match(s) de phase finale non integres, generes apres les poules)`;
+  }
+  toast(msg, 'success');
 }
 
 function resolveAllConflicts(ts, cfg) {

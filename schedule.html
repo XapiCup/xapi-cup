@@ -34,11 +34,13 @@
       </div>
     </div>
 
-    <!-- Toolbar : actions + collapse config -->
+    <!-- Toolbar : actions -->
     <section class="card toolbar-row">
       <div class="toolbar-buttons">
-        <button class="btn btn-primary" id="generate-all-btn">🎲 Générer le planning global</button>
-        <button class="btn btn-warning" id="resolve-conflicts-btn">🛠️ Résoudre les conflits</button>
+        <button class="btn btn-primary" id="generate-all-btn">🎲 Phase de poules</button>
+        <button class="btn btn-warning" id="integrate-knockout-btn">🏆 Intégrer phase finale</button>
+        <button class="btn btn-ghost" id="integrate-all-btn" style="background: var(--color-surface-2); color: var(--color-text); border: 1px solid var(--color-border);">📦 Tout planifier</button>
+        <button class="btn btn-ghost" id="resolve-conflicts-btn" style="background: var(--color-warning); color: #fff; border-color: var(--color-warning);">🛠️ Résoudre conflits</button>
         <button class="btn btn-ghost" id="toggle-config-btn" style="background: var(--color-surface-2); color: var(--color-text); border: 1px solid var(--color-border);">⚙️ Config</button>
         <button class="btn btn-ghost" id="export-global-schedule-btn" style="background: var(--color-primary); color: #fff; border-color: var(--color-primary);">📸 Exporter</button>
       </div>
@@ -75,7 +77,7 @@
       <div class="form-row" style="margin-top: 16px; align-items: center;">
         <label class="switch">
           <input type="checkbox" id="toggle-multidays" />
-          <span>📅 Étaler sur plusieurs jours</span>
+          <span>📅 Étaler les poules sur plusieurs jours</span>
         </label>
       </div>
       <div id="days-config" style="display: none;">
@@ -97,7 +99,7 @@
       </div>
     </section>
 
-    <!-- Conflits -->
+    <!-- Conflits / Prévisualisation phase finale -->
     <section class="card mt-3" id="conflict-panel"></section>
 
     <!-- Vue planning -->

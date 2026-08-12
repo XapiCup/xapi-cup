@@ -250,12 +250,41 @@ function renderFinalRanking(t) {
   const container = $('#ranking-container');
   if (!container) return;
   clear(container);
+
+  // Cas 1 : tournoi termine -> classement complet
+  // Cas 2 : pas termine -> panneau "en cours" + bouton "afficher quand meme le classement"
+  // Cas 3 : pas de donnees -> etat vide
+
   if (!t || !t.teams.length) {
     container.appendChild(el('div', { class: 'empty-state' },
       el('div', { class: 'empty-icon' }, '🏆'),
       el('h3', {}, 'Aucune équipe participante.')));
     return;
   }
+
+  const finished = t.phase === 'finished';
+  if (!finished) {
+    container.appendChild(el('div', { class: 'empty-state' },
+      el('div', { class: 'empty-icon' }, '🏆'),
+      el('h3', {}, 'Classement final'),
+      el('p', { class: 'muted' }, 'Disponible à la fin du tournoi, lorsque toutes les phases finales auront été jouées.'),
+      el('button', {
+        class: 'btn btn-ghost',
+        style: { marginTop: '12px' },
+        onclick: () => renderFinalRankingFromState(t, true),
+      }, '🔍 Afficher le classement actuel'),
+    ));
+    return;
+  }
+
+  renderFinalRankingFromState(t, false);
+}
+
+/**
+ * Affiche le classement reel. Si force=true, l'utilise pour la previsualisation
+ * meme si le tournoi n'est pas termine (avec une note explicite).
+ */
+function renderFinalRankingFromState(t, forcePreview) {
 
   // === Index des standings de poules ===
   const includeConsolante = t.config?.includeConsolante !== false;
@@ -372,6 +401,16 @@ function renderFinalRanking(t) {
   });
   table.appendChild(tb);
   container.appendChild(table);
+
+  // Si preview, proposer un retour
+  if (forcePreview) {
+    container.appendChild(el('div', { style: { marginTop: '16px' } },
+      el('button', {
+        class: 'btn btn-ghost',
+        onclick: () => renderFinalRanking(getViewerTournament()),
+      }, '← Retour'),
+    ));
+  }
 }
 
 function compareSt(a, b) {
