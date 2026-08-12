@@ -14,25 +14,16 @@ let activeViewerSubTab = 'poules';
 let lastHistoryLength = 0;
 
 onReady(() => {
-  // === Onglets principaux (live / schedule) ===
   $$('.v-tab').forEach((t) => {
     t.addEventListener('click', () => {
       $$('.v-tab').forEach((x) => x.classList.remove('active'));
       t.classList.add('active');
       const target = t.dataset.viewerTab;
-      $$('.tab-content').forEach((c) => {
-        c.style.display = 'none';
-        c.classList.remove('active');
-      });
+      $$('.tab-content').forEach((c) => { c.style.display = 'none'; c.classList.remove('active'); });
       const tabEl = $('#tab-' + target);
-      if (tabEl) {
-        tabEl.style.display = '';
-        tabEl.classList.add('active');
-      }
+      if (tabEl) { tabEl.style.display = ''; tabEl.classList.add('active'); }
     });
   });
-
-  // === Sous-onglets Poules / Phase finale / Classement final ===
   $$('.tab[data-viewer-subtab]').forEach((t) => {
     t.addEventListener('click', () => {
       $$('.tab[data-viewer-subtab]').forEach((x) => x.classList.remove('active'));
@@ -42,8 +33,6 @@ onReady(() => {
       $('#viewer-subtab-' + activeViewerSubTab).style.display = '';
     });
   });
-
-  // === Onglets des brackets Or / Consolante ===
   $$('.tab[data-bracket-tab]').forEach((t) => {
     t.addEventListener('click', () => {
       $$('[data-bracket-tab]').forEach((x) => x.classList.remove('active'));
@@ -52,27 +41,21 @@ onReady(() => {
       renderKnockout();
     });
   });
-
-  // === Feed live : toggle ===
   const aside = $('#live-feed-aside');
   const toggle = $('#live-feed-toggle');
   const close = $('#live-feed-close');
   if (toggle && aside) {
     toggle.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+      e.preventDefault(); e.stopPropagation();
       aside.classList.toggle('collapsed');
     });
   }
   if (close && aside) {
     close.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+      e.preventDefault(); e.stopPropagation();
       aside.classList.add('collapsed');
     });
   }
-
-  // === Subscribe ===
   store.subscribe(() => {
     renderTournamentSelector();
     renderAll();
@@ -87,38 +70,20 @@ function renderTournamentSelector() {
   const container = $('#tournament-selector');
   const section = $('#tournament-selector-section');
   if (!container || !section) return;
-
   const publics = store.listPublicTournaments();
   clear(container);
-
-  if (publics.length === 0) {
-    section.style.display = 'none';
-    return;
-  }
-
-  if (publics.length === 1) {
-    setViewerCurrentTournament(publics[0].id);
-    section.style.display = 'none';
-    return;
-  }
-
+  if (publics.length === 0) { section.style.display = 'none'; return; }
+  if (publics.length === 1) { setViewerCurrentTournament(publics[0].id); section.style.display = 'none'; return; }
   section.style.display = '';
   const currentId = getViewerCurrentTournamentId();
-  if (!currentId || !publics.some((t) => t.id === currentId)) {
-    setViewerCurrentTournament(publics[0].id);
-  }
+  if (!currentId || !publics.some((t) => t.id === currentId)) setViewerCurrentTournament(publics[0].id);
   const sel = getViewerCurrentTournamentId();
-
   container.appendChild(el('div', { class: 'tournament-selector-label' }, '📂 Sélectionnez un tournoi :'));
   const grid = el('div', { class: 'tournament-selector-grid' });
   publics.forEach((t) => {
     const card = el('button', {
       class: 'tournament-selector-card' + (t.id === sel ? ' active' : ''),
-      onclick: () => {
-        setViewerCurrentTournament(t.id);
-        renderTournamentSelector();
-        renderAll();
-      },
+      onclick: () => { setViewerCurrentTournament(t.id); renderTournamentSelector(); renderAll(); },
     },
       el('div', { class: 'tournament-selector-name' }, t.name),
       t.date ? el('div', { class: 'tournament-selector-date' }, '📅 ' + new Date(t.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })) : null,
@@ -223,19 +188,63 @@ function renderKnockout() {
   }
 }
 
+// ================================================================
+// HELPERS BRACKET
+// ================================================================
+function getBracketWinner(br) {
+  if (!br || !br.rounds?.length) return null;
+  const last = br.rounds[br.rounds.length - 1][0];
+  if (!last || !last.finished) return null;
+  return last.winnerSlot === 'A' ? last.slotA : last.slotB;
+}
+function getBracketRunnerUp(br) {
+  if (!br || !br.rounds?.length) return null;
+  const last = br.rounds[br.rounds.length - 1][0];
+  if (!last || !last.finished) return null;
+  return last.winnerSlot === 'A' ? last.slotB : last.slotA;
+}
+function getBracketThird(br) {
+  if (!br || !br.thirdPlaceMatch || !br.thirdPlaceMatch.finished) return null;
+  const m = br.thirdPlaceMatch;
+  return m.winnerSlot === 'A' ? m.slotA : m.slotB;
+}
+function getBracketFourth(br) {
+  if (!br || !br.thirdPlaceMatch || !br.thirdPlaceMatch.finished) return null;
+  const m = br.thirdPlaceMatch;
+  return m.winnerSlot === 'A' ? m.slotB : m.slotA;
+}
+function getSemiLosers(br) {
+  if (!br || br.rounds.length < 2) return [];
+  const semis = br.rounds[br.rounds.length - 2];
+  const losers = [];
+  semis.forEach((m) => {
+    if (!m.finished) return;
+    const loser = m.winnerSlot === 'A' ? m.slotB : m.slotA;
+    if (loser) losers.push(loser);
+  });
+  return losers;
+}
+
+// ================================================================
+// CLASSEMENT FINAL
+// ================================================================
 /**
- * Classement final : combine poules + bracket pour donner un ordre final.
- * Ordre de priorite :
+ * Ordre :
  *  1. Vainqueur Or
  *  2. Finaliste Or
- *  3. 3e Or (gagnant petite finale)
- *  4. 4e Or (perdant petite finale)
- *  5. Vainqueur Consolante
- *  6. Finaliste Consolante
- *  7. 3e Consolante
- *  8. 4e Consolante
- *  9. Eliminés en demi (par classement dans leur poule)
- * 10. Eliminés en poule (par classement dans leur poule)
+ *  3. 3e Or (gagnant petite finale Or)
+ *  4. 4e Or (perdant petite finale Or)
+ *  5. Qualifiés Or éliminés en demi (tri par classement poules)
+ *  6. Qualifiés Or non classés (n'ayant pas joué en phase finale)
+ *  7. Vainqueur Consolante
+ *  8. Finaliste Consolante
+ *  9. 3e Consolante
+ * 10. 4e Consolante
+ * 11. Qualifiés Consolante éliminés en demi
+ * 12. Qualifiés Consolante non classés
+ * 13. Éliminés en poule (non qualifiés)
+ *
+ * Ex-aequo : 2 equipes peuvent partager la même place si mêmes points/diff/goals.
  */
 function renderFinalRanking(t) {
   const container = $('#ranking-container');
@@ -248,111 +257,98 @@ function renderFinalRanking(t) {
     return;
   }
 
-  const ranked = [];
-
-  // 1. Vainqueurs / finalistes bracket
-  const placeBracket = (br, kind, baseRank) => {
-    if (!br || !br.rounds?.length) return;
-    const lastRound = br.rounds[br.rounds.length - 1];
-    const final = lastRound[0];
-    if (!final || !final.finished) return;
-    const winnerId = final.winnerSlot === 'A' ? final.slotA : final.slotB;
-    const runnerId = final.winnerSlot === 'A' ? final.slotB : final.slotA;
-    if (winnerId) ranked.push({ rank: baseRank, team: t.teams.find((x) => x.id === winnerId), label: kind === 'gold' ? '🥇 Vainqueur' : '🥇 Vainqueur Consolante' });
-    if (runnerId) ranked.push({ rank: baseRank + 1, team: t.teams.find((x) => x.id === runnerId), label: kind === 'gold' ? '🥈 Finaliste' : '🥈 Finaliste Consolante' });
-    // Petite finale
-    if (br.thirdPlaceMatch && br.thirdPlaceMatch.finished) {
-      const tpm = br.thirdPlaceMatch;
-      const w3 = tpm.winnerSlot === 'A' ? tpm.slotA : tpm.slotB;
-      const l3 = tpm.winnerSlot === 'A' ? tpm.slotB : tpm.slotA;
-      if (w3) ranked.push({ rank: baseRank + 2, team: t.teams.find((x) => x.id === w3), label: '🥉 3e' });
-      if (l3) ranked.push({ rank: baseRank + 3, team: t.teams.find((x) => x.id === l3), label: '4e' });
-    }
-  };
-
-  placeBracket(t.brackets.gold, 'gold', 1);
-  placeBracket(t.brackets.silver, 'silver', 100);
-
-  // 2. Eliminés en demi (les demi-finalistes non classés)
-  const alreadyRanked = new Set(ranked.map((r) => r.team?.id).filter(Boolean));
-  const demis = new Set();
-  if (t.brackets.gold && t.brackets.gold.rounds.length >= 2) {
-    const semis = t.brackets.gold.rounds[t.brackets.gold.rounds.length - 2];
-    semis.forEach((m) => {
-      if (m.finished) {
-        const lA = m.winnerSlot === 'A' ? m.slotB : m.slotA;
-        const lB = m.winnerSlot === 'A' ? m.slotA : m.slotB;
-        // Le perdant (non qualifie) est éliminé en demi
-        const loser = m.winnerSlot === 'A' ? m.slotB : m.slotA;
-        if (loser && !alreadyRanked.has(loser)) {
-          demis.add(loser);
-          alreadyRanked.add(loser);
-        }
-      }
-    });
-  }
-
-  // 3. Classement complet des poules (pour trier les éliminés)
-  const allStandings = [];
+  // === Index des standings de poules ===
+  const includeConsolante = t.config?.includeConsolante !== false;
+  const qualifiersPerPool = t.config?.qualifiersPerPool || 2;
+  const standingsByTeam = new Map();
+  const { gold, consolante } = t.poules.length
+    ? splitQualifiers(t.poules.map((p, idx) => computeStandings(p, t.matches.filter((m) => m.pouleIdx === idx))), qualifiersPerPool, includeConsolante)
+    : { gold: [], consolante: [] };
+  const goldSet = new Set(gold.map((x) => x.id));
+  const consolanteSet = new Set(consolante.map((x) => x.id));
   if (t.poules.length) {
     t.poules.forEach((p, idx) => {
       const matches = t.matches.filter((m) => m.pouleIdx === idx);
       const standings = computeStandings(p, matches);
       standings.forEach((s, sIdx) => {
-        if (!alreadyRanked.has(s.team.id) && !demis.has(s.team.id)) {
-          allStandings.push({ team: s.team, points: s.points, diff: s.goalDiff, scored: s.goalsFor, sIdx, pouleIdx: idx });
-        }
+        standingsByTeam.set(s.team.id, { points: s.points, diff: s.goalDiff, scored: s.goalsFor, sIdx, pouleIdx: idx });
       });
     });
   }
+  const teamById = (id) => t.teams.find((x) => x.id === id);
+  const standingsOf = (id) => standingsByTeam.get(id) || { points: -1, diff: -999, scored: -999, sIdx: 999, pouleIdx: 999 };
 
-  // 4. Classer : demis d'abord (par classement dans leur poule), puis non-qualifiés
-  const includeConsolante = t.config?.includeConsolante !== false;
-  const qualifiersPerPool = t.config?.qualifiersPerPool || 2;
-  const { gold, consolante } = t.poules.length
-    ? splitQualifiers(t.poules.map((p, idx) => computeStandings(p, t.matches.filter((m) => m.pouleIdx === idx))), qualifiersPerPool, includeConsolante)
-    : { gold: [], consolante: [] };
-  const qualifiesSet = new Set([...gold, ...consolante].map((x) => x.id));
+  const final = [];
+  const alreadyRanked = new Set();
 
-  // Demis : déjà exclus, déjà ajoutés à alreadyRanked
-  // Qualifiés non encore classés : les ajouter entre les bracket et les "éliminés en poule"
-  const qualifiedNotRanked = [];
-  const notQualified = [];
-  allStandings.forEach((s) => {
-    if (qualifiesSet.has(s.team.id)) {
-      qualifiedNotRanked.push(s);
-    } else {
-      notQualified.push(s);
-    }
-  });
+  // === OR ===
+  const orWinner = getBracketWinner(t.brackets.gold);
+  if (orWinner) {
+    final.push({ rank: 1, team: teamById(orWinner), label: '🥇 Vainqueur Or' });
+    alreadyRanked.add(orWinner);
+  }
+  const orRunner = getBracketRunnerUp(t.brackets.gold);
+  if (orRunner && !alreadyRanked.has(orRunner)) {
+    final.push({ rank: 2, team: teamById(orRunner), label: '🥈 Finaliste Or' });
+    alreadyRanked.add(orRunner);
+  }
+  const orThird = getBracketThird(t.brackets.gold);
+  if (orThird) {
+    final.push({ rank: 3, team: teamById(orThird), label: '🥉 3e Or' });
+    alreadyRanked.add(orThird);
+  }
+  const orFourth = getBracketFourth(t.brackets.gold);
+  if (orFourth && !alreadyRanked.has(orFourth)) {
+    final.push({ rank: 4, team: teamById(orFourth), label: '4e Or' });
+    alreadyRanked.add(orFourth);
+  }
 
-  // Trier chaque groupe par points, diff, scored
-  const sortF = (a, b) => {
-    if (b.points !== a.points) return b.points - a.points;
-    if (b.diff !== a.diff) return b.diff - a.diff;
-    if (b.scored !== a.scored) return b.scored - a.scored;
-    return a.team.name.localeCompare(b.team.name);
-  };
-  qualifiedNotRanked.sort(sortF);
-  notQualified.sort(sortF);
+  // Qualifiés Or éliminés en demi
+  const orSemiLosers = getSemiLosers(t.brackets.gold).filter((id) => id && !alreadyRanked.has(id));
+  orSemiLosers.forEach((id) => alreadyRanked.add(id));
+  orSemiLosers.sort((a, b) => compareSt(standingsOf(a), standingsOf(b)));
 
-  // Demis : on n'a pas leur classement dans les poules, on les classe par défaut après les qualifiés
-  // En fait un demi-finaliste a forcément été qualifié, donc il a un classement dans sa poule
-  // S'il est déjà dans ranked, ok. Sinon, c'est qu'il n'a pas été trouvé dans le bracket (pas joué).
+  // Qualifiés Or non classés
+  const orQualifiedUnplayed = t.teams
+    .filter((x) => goldSet.has(x.id) && !alreadyRanked.has(x.id))
+    .sort((a, b) => compareSt(standingsOf(a.id), standingsOf(b.id)));
 
-  // Construire le classement final
-  const final = [...ranked];
-  let nextRank = ranked.length > 0 ? Math.max(...ranked.map((r) => r.rank)) + 1 : 1;
-  qualifiedNotRanked.forEach((s) => {
-    final.push({ rank: nextRank++, team: s.team, label: 'Qualifié non classé' });
-  });
-  notQualified.forEach((s) => {
-    final.push({ rank: nextRank++, team: s.team, label: 'Éliminé en poule' });
-  });
+  // === CONSOLANTE ===
+  const silverWinner = getBracketWinner(t.brackets.silver);
+  const silverRunner = getBracketRunnerUp(t.brackets.silver);
+  const silverThird = getBracketThird(t.brackets.silver);
+  const silverFourth = getBracketFourth(t.brackets.silver);
+  const silverSemiLosers = getSemiLosers(t.brackets.silver).filter((id) => id && !alreadyRanked.has(id));
+  silverSemiLosers.forEach((id) => alreadyRanked.add(id));
+  silverSemiLosers.sort((a, b) => compareSt(standingsOf(a), standingsOf(b)));
+  const consolanteQualifiedUnplayed = t.teams
+    .filter((x) => consolanteSet.has(x.id) && !alreadyRanked.has(x.id))
+    .sort((a, b) => compareSt(standingsOf(a.id), standingsOf(b.id)));
 
-  // Render
+  // === ELIMINES EN POULE ===
+  const eliminatedInPool = t.teams
+    .filter((x) => !alreadyRanked.has(x.id) && !goldSet.has(x.id) && !consolanteSet.has(x.id))
+    .sort((a, b) => compareSt(standingsOf(a.id), standingsOf(b.id)));
+
+  // === Attribution des rangs ===
+  const nextRank = { value: (final.length > 0 ? Math.max(...final.map((r) => r.rank)) + 1 : 1) };
+
+  appendGroup(final, teamById, standingsOf, orSemiLosers, nextRank, 'Qualifié Or éliminé en demi');
+  appendGroup(final, teamById, standingsOf, orQualifiedUnplayed.map((x) => x.id), nextRank, 'Qualifié Or non classé');
+
+  // Consolante : 4 premiers
+  if (silverWinner) { pushRanked(final, alreadyRanked, nextRank, teamById(silverWinner), '🥇 Vainqueur Consolante'); }
+  if (silverRunner) { pushRanked(final, alreadyRanked, nextRank, teamById(silverRunner), '🥈 Finaliste Consolante'); }
+  if (silverThird) { pushRanked(final, alreadyRanked, nextRank, teamById(silverThird), '🥉 3e Consolante'); }
+  if (silverFourth) { pushRanked(final, alreadyRanked, nextRank, teamById(silverFourth), '4e Consolante'); }
+
+  appendGroup(final, teamById, standingsOf, silverSemiLosers, nextRank, 'Qualifié Consolante éliminé en demi');
+  appendGroup(final, teamById, standingsOf, consolanteQualifiedUnplayed.map((x) => x.id), nextRank, 'Qualifié Consolante non classé');
+  appendGroup(final, teamById, standingsOf, eliminatedInPool.map((x) => x.id), nextRank, 'Éliminé en poule');
+
+  // === RENDER ===
   container.appendChild(el('h2', { style: { marginTop: '0' } }, '🏆 Classement final'));
-  container.appendChild(el('p', { class: 'muted' }, 'Combinaison des phases de poules et des phases finales.'));
+  container.appendChild(el('p', { class: 'muted' }, 'Combinaison des phases de poules et des phases finales. Les ex-aequo partagent la même place.'));
 
   const table = el('table', { class: 'standings-table final-ranking-table' });
   table.appendChild(el('thead', {}, el('tr', {},
@@ -378,6 +374,51 @@ function renderFinalRanking(t) {
   container.appendChild(table);
 }
 
+function compareSt(a, b) {
+  if (b.points !== a.points) return b.points - a.points;
+  if (b.diff !== a.diff) return b.diff - a.diff;
+  if (b.scored !== a.scored) return b.scored - a.scored;
+  return 0;
+}
+
+function pushRanked(final, alreadyRanked, nextRank, team, label) {
+  if (!team || alreadyRanked.has(team.id)) return;
+  final.push({ rank: nextRank.value, team, label });
+  alreadyRanked.add(team.id);
+  nextRank.value += 1;
+}
+
+/**
+ * Attribue des rangs à un groupe d'équipes.
+ * Les ex-aequo (mêmes points/diff/goals) partagent la même place.
+ */
+function appendGroup(final, teamById, standingsOf, ids, nextRank, label) {
+  if (!ids.length) return;
+  for (let i = 0; i < ids.length; i++) {
+    const id = ids[i];
+    const team = teamById(id);
+    if (!team) continue;
+    const st = standingsOf(id);
+    let rank;
+    if (i > 0) {
+      const prevSt = standingsOf(ids[i - 1]);
+      if (prevSt.points === st.points && prevSt.diff === st.diff && prevSt.scored === st.scored) {
+        rank = final[final.length - 1].rank;
+      } else {
+        rank = nextRank.value;
+        nextRank.value += 1;
+      }
+    } else {
+      rank = nextRank.value;
+      nextRank.value += 1;
+    }
+    final.push({ rank, team, label });
+  }
+}
+
+// ================================================================
+// HISTORIQUE / PLANNING (inchangés)
+// ================================================================
 function renderHistory(t) {
   const list = $('#live-feed');
   if (!list) return;
@@ -425,11 +466,9 @@ function renderSchedule(t) {
       'Le planning est actuellement masqué par l\'administrateur.'));
     return;
   }
-
   container.appendChild(el('h2', { style: { marginTop: '0' } }, '📅 Planning — ' + t.name));
   container.appendChild(el('p', { class: 'muted', style: { marginTop: '4px' } },
     'Matchs simultanés joués en parallèle sur plusieurs terrains.'));
-
   const slotsByDT = new Map();
   t.schedule.forEach((s) => {
     const key = s.date + '__' + s.time;
@@ -439,22 +478,18 @@ function renderSchedule(t) {
   const slots = Array.from(slotsByDT.values()).sort((a, b) =>
     (a.date + a.time).localeCompare(b.date + b.time)
   );
-
   const matchesMap = new Map();
   t.matches.forEach((m) => matchesMap.set(m.id, m));
   (t.bracketMatches || []).forEach((m) => matchesMap.set(m.id, m));
-
   const slotsByDate = new Map();
   slots.forEach((s) => {
     if (!slotsByDate.has(s.date)) slotsByDate.set(s.date, []);
     slotsByDate.get(s.date).push(s);
   });
-
   const nbTerrains = Math.max(
     t.config?.nbTerrains || 1,
     ...t.schedule.map((s) => s.terrain)
   );
-
   Array.from(slotsByDate.entries()).sort(([a],[b]) => a.localeCompare(b)).forEach(([date, daySlots]) => {
     container.appendChild(el('h3', { style: { color: 'var(--color-primary)', marginTop: '20px' } },
       new Date(date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })));

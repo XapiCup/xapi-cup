@@ -327,46 +327,100 @@ function renderTerrainView() {
 function generateAllSchedules(ts, cfg) {
   if (!ts.length) { toast('Aucun tournoi.', 'warn'); return; }
   let totalAdded = 0;
-  store.setCurrent((s) => {
-    ts.forEach((t) => {
-      const allMatches = [
-        ...t.matches,
-        ...(t.bracketMatches || []),
-      ];
-      if (!allMatches.length) return;
-      // Construire la config finale du tournoi (splitDays + days prioritaires)
-      const matchCfg = {
-        ...cfg,
-        splitDays: cfg.splitDays && cfg.days?.length > 0,
-        days: cfg.days || [],
-      };
-      const newSched = generateSchedule(allMatches, matchCfg);
-      t.schedule = newSched;
-      t.config = { ...(t.config || {}), nbTerrains: cfg.nbTerrains };
-      totalAdded += newSched.length;
-      if (t.id === ts[0].id) {
-        s.history.push({
-          at: new Date().toISOString(),
-          type: 'schedule-generated',
-          label: `Planning généré : ${newSched.length} matchs sur ${t.name}`,
-        });
-      }
+
+  // 1) Construire un pool global : tous les matchs de tous les tournois, tagues par _tid
+  const pool = [];
+  const matchToTournament = new Map();
+  ts.forEach((t) => {
+    const allMatches = [...t.matches, ...(t.bracketMatches || [])];
+    if (!allMatches.length) return;
+    allMatches.forEach((m) => {
+      pool.push({ ...m, _tid: t.id });
+      matchToTournament.set(m.id, t.id);
     });
   });
-  toast(`Planning généré : ${totalAdded} créneaux au total.`, 'success');
+  if (!pool.length) { toast('Aucun match à planifier.', 'warn'); return; }
+
+  // 2) Generer UN planning global sur le pool (1 match / terrain / creneau, pas 2x la meme equipe)
+  const matchCfg = {
+    ...cfg,
+    splitDays: cfg.splitDays && cfg.days?.length > 0,
+    days: cfg.days || [],
+  };
+  const globalSched = generateSchedule(pool, matchCfg);
+  if (!globalSched.length) { toast('Planning vide (verifie horaires/terrains).', 'warn'); return; }
+
+  // 3) Auto-resolution sur le pool (cas extreme, normalement 0 conflit)
+  const resolved = autoResolveConflicts(globalSched, pool, cfg);
+  const finalSched = resolved.schedule;
+
+  // 4) Regrouper par tournoi et assigner dans t.schedule
+  const byTournament = new Map();
+  ts.forEach((t) => byTournament.set(t.id, []));
+  finalSched.forEach((s) => {
+    const tid = matchToTournament.get(s.matchId);
+    if (byTournament.has(tid)) {
+      const sc = { ...s };
+      delete sc._tid;
+      byTournament.get(tid).push(sc);
+    }
+  });
+
+  store.setCurrent((s) => {
+    ts.forEach((t) => {
+      t.schedule = byTournament.get(t.id) || [];
+      t.config = { ...(t.config || {}), nbTerrains: cfg.nbTerrains };
+      totalAdded += t.schedule.length;
+    });
+    if (ts[0]) {
+      s.history.push({
+        at: new Date().toISOString(),
+        type: 'schedule-generated',
+        label: `Planning généré : ${finalSched.length} matchs sur ${ts.length} tournois`,
+      });
+    }
+  });
+  toast(`Planning généré : ${totalAdded} créneaux sur ${ts.length} tournoi${ts.length > 1 ? 's' : ''}.`, 'success');
 }
 
 function resolveAllConflicts(ts, cfg) {
+  // Meme logique : pool global puis repartition
   let totalResolved = 0;
+
+  const pool = [];
+  const matchToTournament = new Map();
+  ts.forEach((t) => {
+    if (!t.schedule?.length) return;
+    const allMatches = [...t.matches, ...(t.bracketMatches || [])];
+    allMatches.forEach((m) => {
+      pool.push(m);
+      matchToTournament.set(m.id, t.id);
+    });
+  });
+  if (!pool.length || !ts.some((t) => t.schedule?.length)) {
+    toast('Aucun planning à analyser.', 'info');
+    return;
+  }
+
+  // Reconstruire le planning global a partir des schedules individuels
+  const globalSched = [];
+  ts.forEach((t) => {
+    (t.schedule || []).forEach((s) => globalSched.push({ ...s }));
+  });
+  const result = autoResolveConflicts(globalSched, pool, cfg);
+  totalResolved = result.resolved;
+
+  // Repartir
+  const byTournament = new Map();
+  ts.forEach((t) => byTournament.set(t.id, []));
+  result.schedule.forEach((s) => {
+    const tid = matchToTournament.get(s.matchId);
+    if (byTournament.has(tid)) byTournament.get(tid).push(s);
+  });
+
   store.setCurrent((s) => {
     ts.forEach((t) => {
-      const allMatches = [...t.matches, ...(t.bracketMatches || [])];
-      if (!t.schedule?.length || !allMatches.length) return;
-      const result = autoResolveConflicts(t.schedule, allMatches, cfg);
-      if (result.resolved > 0) {
-        t.schedule = result.schedule;
-        totalResolved += result.resolved;
-      }
+      t.schedule = byTournament.get(t.id) || [];
     });
   });
   if (totalResolved > 0) {
