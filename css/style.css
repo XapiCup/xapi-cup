@@ -1115,7 +1115,33 @@ a:hover { text-decoration: underline; }
   font-size: 0.85rem;
   color: #5a4500;
 }
-.t-card-overlap { border-left: 4px solid #c1272d !important; }
+.t-card-info {
+  background: #e6f2ff;
+  border: 1px solid #91c4ff;
+  border-left: 4px solid #1e6091;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 8px 0;
+  font-size: 0.85rem;
+  color: #0c3a5e;
+}
+.t-card-overlap { border-left: 4px solid var(--color-accent, #1e6091) !important; }
+.t-card-parallel {
+  background: #e6f2ff;
+  border: 1px solid #91c4ff;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  color: #0c3a5e;
+  transition: all 0.2s;
+}
+.t-card-parallel:hover { background: #d1e5ff; }
+.t-card-parallel--on {
+  background: #d4edda;
+  border-color: #28a745;
+  color: #155724;
+}
 .t-card-private { opacity: 0.85; }
 .t-card-private::before {
   content: '🔒';

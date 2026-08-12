@@ -394,12 +394,20 @@ function buildTournamentCard(t) {
         onclick: (e) => { e.stopPropagation(); togglePublic(t); },
         title: t.public === false ? 'Rendre public' : 'Masquer du côté public',
       }, t.public === false ? '🔒 Privé' : '🌐 Public'),
+      el('button', {
+        class: 't-card-parallel' + (t.allowParallel !== false ? ' t-card-parallel--on' : ''),
+        onclick: (e) => { e.stopPropagation(); toggleParallel(t); },
+        title: t.allowParallel !== false ? 'Planning accepte les chevauchements (cliquer pour désactiver)' : 'Planning evitera les chevauchements (cliquer pour activer)',
+      }, t.allowParallel !== false ? '⚡ Parallèle OK' : '🚫 Pas en parallèle'),
     ),
-    hasOverlap ? el('div', { class: 't-card-warning' },
-      '⚠️ Chevauche avec ',
+    hasOverlap ? el('div', { class: 't-card-info' },
+      '📆 Chevauche avec ',
       el('strong', {}, overlaps.map(o => (o.a.id === t.id ? o.b.name : o.a.name)).join(', ')),
       el('br'),
       el('span', { class: 'muted' }, overlaps[0].range),
+      t.allowParallel !== false
+        ? el('div', { class: 'muted', style: { fontSize: '0.75rem', marginTop: '4px' } }, '✓ Accepté (planning fera son possible)')
+        : el('div', { class: 'muted', style: { fontSize: '0.75rem', marginTop: '4px' } }, '⚠ Le planning décalera ce tournoi pour éviter le chevauchement'),
     ) : null,
     el('div', { class: 't-card-stats' },
       el('div', { class: 't-card-stat' },
@@ -454,6 +462,13 @@ function togglePublic(t) {
   const newPublic = t.public === false;
   store.setTournamentPublic(t.id, newPublic);
   toast(newPublic ? 'Visible côté public' : 'Masqué du public', 'success');
+  renderDashboard();
+}
+
+function toggleParallel(t) {
+  const newVal = t.allowParallel === false;
+  store.setTournamentAllowParallel(t.id, newVal);
+  toast(newVal ? 'Planning accepte les chevauchements' : 'Planning decalera ce tournoi pour eviter les chevauchements', 'info');
   renderDashboard();
 }
 

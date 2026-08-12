@@ -29,6 +29,7 @@ const DEFAULT_TOURNAMENT = () => ({
   endDate: null,             // date de fin (optionnel, si tournoi multi-jours)
   location: '',              // lieu du tournoi
   public: true,              // visible côté public (viewer)
+  allowParallel: true,       // autoriser le chevauchement avec d'autres tournois (sinon le planning auto decale)
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   teams: [],
@@ -70,6 +71,14 @@ class Store {
         if (t.public === undefined) t.public = true;
       });
       this.state.version = 3;
+      this._save();
+    }
+    // Migration v3 -> v4 : allowParallel (default true)
+    if (this.state.version < 4) {
+      this.state.tournaments.forEach((t) => {
+        if (t.allowParallel === undefined) t.allowParallel = true;
+      });
+      this.state.version = 4;
       this._save();
     }
   }
@@ -255,6 +264,15 @@ class Store {
     const t = this.getTournament(id);
     if (!t) return;
     t.public = !!isPublic;
+    t.updatedAt = new Date().toISOString();
+    this._save();
+    this._notify();
+  }
+
+  setTournamentAllowParallel(id, allow) {
+    const t = this.getTournament(id);
+    if (!t) return;
+    t.allowParallel = !!allow;
     t.updatedAt = new Date().toISOString();
     this._save();
     this._notify();
