@@ -14,285 +14,325 @@
         <span class="logo-mark">⚽</span>
         <div class="logo-text">
           <span class="logo-title">XAPI <strong>CUP</strong></span>
-          <span class="logo-sub">Espace administrateur</span>
+          <span class="logo-sub" id="header-subtitle">Espace administrateur</span>
         </div>
       </a>
       <nav class="main-nav">
         <a href="index.html" class="nav-link">Accueil</a>
         <a href="viewer.html" class="nav-link">Vue publique</a>
+        <a href="admin.html" class="nav-link nav-admin active">Admin</a>
       </nav>
     </div>
   </header>
 
-  <!-- Bandeau d'authentification (visible quand connecté) -->
+  <!-- Bandeau d'authentification -->
   <div class="auth-banner" id="auth-banner" style="display:none;">
     <div class="auth-info">
       🔓 Connecté en tant qu'<strong>administrateur</strong>
       <span id="session-timer" class="muted"></span>
     </div>
     <div class="auth-actions">
-      <button class="btn btn-sm btn-ghost" id="change-pwd-btn" style="background: var(--color-surface); border: 1px solid var(--color-border); color: var(--color-text);">🔑 Changer le mot de passe</button>
+      <button class="btn btn-sm btn-ghost" id="change-pwd-btn" style="background: var(--color-surface); border: 1px solid var(--color-border); color: var(--color-text);">🔑 Mot de passe</button>
       <button class="btn btn-sm btn-danger" id="logout-btn">Déconnexion</button>
     </div>
   </div>
 
-  <!-- Sélecteur de tournoi (en haut, visible uniquement quand connecté) -->
-  <div class="tournament-bar" id="tournament-bar" style="display:none;">
-    <div class="container tournament-bar-inner">
-      <div class="tournament-bar-label">🏆 Tournoi :</div>
-      <select id="tournament-select" class="select select-compact"></select>
-      <div class="tournament-bar-actions">
-        <button class="btn btn-sm btn-ghost" id="tournament-new-btn" style="background: var(--color-primary); color: #fff; border-color: var(--color-primary);">+ Nouveau</button>
-        <button class="btn btn-sm btn-ghost" id="tournament-duplicate-btn" style="background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border);">📋 Dupliquer</button>
-        <button class="btn btn-sm btn-ghost" id="tournament-rename-btn" style="background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border);">✏️</button>
-        <button class="btn btn-sm btn-ghost" id="tournament-archive-btn" style="background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border);">📦 Archiver</button>
-        <button class="btn btn-sm btn-danger" id="tournament-delete-btn">🗑️</button>
-        <button class="btn btn-sm btn-ghost" id="tournament-manage-btn" style="background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border);">⚙️ Tous les tournois</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Contenu admin (caché tant qu'on n'est pas connecté) -->
+  <!-- ================================================================
+       CONTENU ADMIN (caché tant qu'on n'est pas connecté)
+       ================================================================ -->
   <div id="admin-content" style="display:none;">
-    <div class="admin-layout">
-      <aside class="admin-sidebar">
-        <h2>Configuration</h2>
-        <ul class="admin-nav">
-          <li><a href="#section-teams" class="active" data-tab="teams">1. Équipes</a></li>
-          <li><a href="#section-poules" data-tab="poules">2. Poules & matchs</a></li>
-          <li><a href="#section-qualifiers" data-tab="qualifiers">3. Qualification</a></li>
-          <li><a href="#section-knockout" data-tab="knockout">4. Phase finale</a></li>
-          <li><a href="#section-schedule" data-tab="schedule">5. Planning</a></li>
-          <li><a href="#section-history" data-tab="history">6. Historique</a></li>
-          <li><a href="#section-export" data-tab="export">7. Export & sauvegarde</a></li>
-        </ul>
-        <h2>Raccourcis</h2>
-        <ul class="admin-nav">
-          <li><a href="viewer.html" target="_blank">↗ Ouvrir la vue publique</a></li>
-          <li><a href="#" id="nav-reset">⚠ Réinitialiser ce tournoi</a></li>
-        </ul>
-      </aside>
 
-      <main class="admin-main">
+    <!-- ============================================================
+         VUE 1 : DASHBOARD (par défaut)
+         Grille de cards "Mes tournois" + bouton proéminent Nouveau
+         ============================================================ -->
+    <section id="view-dashboard" class="container admin-dashboard">
+      <div class="dashboard-header">
+        <div>
+          <h1>🏆 Mes tournois</h1>
+          <p class="muted">Crée, configure et gère tous tes tournois depuis cet écran.</p>
+        </div>
+        <div class="dashboard-actions">
+          <button class="btn btn-primary btn-lg" id="dashboard-new-btn">+ Nouveau tournoi</button>
+          <a class="btn btn-ghost" href="viewer.html" target="_blank" style="background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border);">👀 Voir côté public</a>
+        </div>
+      </div>
 
-        <!-- ========== SECTION 1 : ÉQUIPES ========== -->
-        <section id="section-teams" class="admin-section">
-          <h2>1. Équipes inscrites</h2>
-          <p class="section-help">Saisissez les noms des équipes. La liste se sauvegarde automatiquement et est synchronisée avec la page publique.</p>
+      <div class="dashboard-stats" id="dashboard-stats"></div>
 
-          <div class="form-row">
-            <div class="form-group" style="flex: 3;">
-              <label for="team-input">Ajouter une équipe</label>
-              <input type="text" id="team-input" class="input" placeholder="Ex: FC Hasparren, Real Basque, Athletic U13..." />
-              <p class="help">Astuce : appuyez sur <kbd>Entrée</kbd> pour ajouter rapidement.</p>
+      <h2 class="dashboard-section-title">Tournois actifs</h2>
+      <div class="tournament-cards" id="tournament-cards"></div>
+
+      <h2 class="dashboard-section-title mt-3" id="archived-section-title" style="display:none;">📦 Archivés</h2>
+      <div class="tournament-cards" id="tournament-cards-archived"></div>
+    </section>
+
+    <!-- ============================================================
+         VUE 2 : PAGE DE TOURNOI (header + onglets verticaux)
+         ============================================================ -->
+    <section id="view-tournament" class="admin-tournament-view" style="display:none;">
+      <div class="tournament-page-header">
+        <div class="container">
+          <button class="btn btn-sm btn-ghost" id="back-to-dashboard" style="background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); margin-bottom: 12px;">
+            ← Tous mes tournois
+          </button>
+          <div class="tournament-page-header-inner">
+            <div>
+              <h1 id="tournament-page-title">Nom du tournoi</h1>
+              <p class="muted" id="tournament-page-subtitle"></p>
             </div>
-            <div class="form-group" style="flex: 1; min-width: 100px;">
-              <label>&nbsp;</label>
-              <button class="btn btn-success" id="add-team-btn" style="width:100%;">+ Ajouter</button>
+            <div class="tournament-page-actions">
+              <button class="btn btn-sm" id="tournament-rename-btn-page" style="background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border);">✏️ Renommer</button>
+              <button class="btn btn-sm" id="tournament-archive-btn-page" style="background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border);">📦 Archiver</button>
+              <button class="btn btn-sm" id="tournament-duplicate-btn-page" style="background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border);">📋 Dupliquer</button>
+              <button class="btn btn-sm btn-danger" id="tournament-delete-btn-page">🗑️</button>
             </div>
           </div>
+        </div>
+      </div>
 
-          <div class="form-row">
-            <div class="form-group" style="flex: 2;">
-              <label for="bulk-input">Ajout en masse (une équipe par ligne)</label>
-              <textarea id="bulk-input" class="input" rows="4" placeholder="FC Hasparren
+      <!-- Onglets verticaux (en haut, sticky) -->
+      <nav class="tournament-tabs" id="tournament-tabs">
+        <div class="container">
+          <button class="t-tab active" data-tournament-tab="teams">👥 Équipes</button>
+          <button class="t-tab" data-tournament-tab="poules">⚽ Poules &amp; matchs</button>
+          <button class="t-tab" data-tournament-tab="knockout">🏆 Arbres</button>
+          <button class="t-tab" data-tournament-tab="schedule">📅 Planning</button>
+          <button class="t-tab" data-tournament-tab="history">📜 Historique</button>
+          <button class="t-tab" data-tournament-tab="export">📤 Export</button>
+        </div>
+      </nav>
+
+      <div class="container tournament-content">
+
+        <!-- ===== ONGLET ÉQUIPES ===== -->
+        <div class="t-tab-content active" data-tournament-tab-content="teams">
+          <div class="admin-section">
+            <h2>Équipes inscrites</h2>
+            <p class="section-help">Saisissez les noms des équipes. La liste se sauvegarde automatiquement.</p>
+
+            <div class="form-row">
+              <div class="form-group" style="flex: 3;">
+                <label for="team-input">Ajouter une équipe</label>
+                <input type="text" id="team-input" class="input" placeholder="Ex: FC Hasparren, Real Basque..." />
+                <p class="help">Astuce : <kbd>Entrée</kbd> pour ajouter rapidement.</p>
+              </div>
+              <div class="form-group" style="flex: 1; min-width: 100px;">
+                <label>&nbsp;</label>
+                <button class="btn btn-success" id="add-team-btn" style="width:100%;">+ Ajouter</button>
+              </div>
+            </div>
+
+            <details class="mt-3">
+              <summary style="cursor: pointer; color: var(--color-primary); font-weight: 600;">+ Ajout en masse</summary>
+              <div class="form-row mt-2">
+                <div class="form-group" style="flex: 3;">
+                  <label for="bulk-input">Une équipe par ligne</label>
+                  <textarea id="bulk-input" class="input" rows="5" placeholder="FC Hasparren
 Real Basque
 Athletic U13
-Aviron Bayonne
 ..."></textarea>
+                </div>
+                <div class="form-group" style="flex: 1; min-width: 100px;">
+                  <label>&nbsp;</label>
+                  <button class="btn btn-accent" id="bulk-add-btn" style="width:100%; align-self:end;">+ Tout ajouter</button>
+                </div>
+              </div>
+            </details>
+
+            <div class="flex-between mt-3 mb-2">
+              <h3 style="margin:0;">Liste des équipes <span class="teams-count" id="teams-count">0</span></h3>
+              <button class="btn btn-sm btn-danger" id="clear-teams-btn">Vider la liste</button>
             </div>
-            <div class="form-group" style="flex: 1; min-width: 100px;">
-              <label>&nbsp;</label>
-              <button class="btn btn-accent" id="bulk-add-btn" style="width:100%;">+ Tout ajouter</button>
+            <ul class="teams-list" id="teams-list"></ul>
+          </div>
+        </div>
+
+        <!-- ===== ONGLET POULES ===== -->
+        <div class="t-tab-content" data-tournament-tab-content="poules">
+          <div class="admin-section">
+            <h2>Poules &amp; matchs de poule</h2>
+            <p class="section-help">Définis le nombre de poules, puis génère le tirage. Les poules sont équilibrées et l'ordre des matchs est mélangé.</p>
+
+            <div id="poules-alert-slot"></div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="nb-poules">Nombre de poules</label>
+                <select id="nb-poules" class="select">
+                  <option value="2">2 poules</option>
+                  <option value="3">3 poules</option>
+                  <option value="4" selected>4 poules</option>
+                  <option value="6">6 poules</option>
+                  <option value="8">8 poules</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>&nbsp;</label>
+                <button class="btn btn-accent" id="generate-poules-btn" style="width:100%;">🎲 Générer les poules</button>
+              </div>
             </div>
+
+            <div id="poules-container" class="mt-3"></div>
           </div>
 
-          <div class="flex-between mt-3 mb-2">
-            <h3 style="margin:0;">
-              Liste des équipes
-              <span class="teams-count" id="teams-count">0</span>
-            </h3>
-            <button class="btn btn-sm btn-danger" id="clear-teams-btn">Vider la liste</button>
-          </div>
-          <ul class="teams-list" id="teams-list">
-            <li class="muted" style="grid-column: 1 / -1; text-align:center; padding: 20px;">Aucune équipe inscrite pour l'instant.</li>
-          </ul>
-        </section>
-
-        <!-- ========== SECTION 2 : POULES & MATCHS ========== -->
-        <section id="section-poules" class="admin-section">
-          <h2>2. Poules & matchs</h2>
-          <p class="section-help">Définissez le nombre de poules, puis générez le tirage. Les poules sont équilibrées et l'ordre des matchs est mélangé.</p>
-
-          <div id="poules-alert-slot"></div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label for="nb-poules">Nombre de poules</label>
-              <select id="nb-poules" class="select">
-                <option value="2">2 poules</option>
-                <option value="3">3 poules</option>
-                <option value="4" selected>4 poules</option>
-                <option value="6">6 poules</option>
-                <option value="8">8 poules</option>
-              </select>
-              <p class="help">Le tirage répartit les équipes de manière équilibrée (écart max 1).</p>
+          <div class="admin-section">
+            <h2>Qualification vers la phase finale</h2>
+            <p class="section-help">Choisis combien d'équipes par poule se qualifient et si la consolante est activée.</p>
+            <div id="qualifiers-alert-slot"></div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="qualifiers-per-pool">Qualifiés par poule</label>
+                <select id="qualifiers-per-pool" class="select">
+                  <option value="1">1 (les premiers uniquement)</option>
+                  <option value="2" selected>2 (les 2 premiers)</option>
+                  <option value="3">3 (les 3 premiers)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="checkbox-group">
+                  <input type="checkbox" id="enable-consolante" checked />
+                  <span>Activer la consolante</span>
+                </label>
+              </div>
             </div>
-            <div class="form-group">
-              <label>&nbsp;</label>
-              <button class="btn btn-accent" id="generate-poules-btn" style="width:100%;">🎲 Générer les poules</button>
+            <div id="qualifiers-preview" class="mt-3"></div>
+            <div class="mt-3" id="qualifiers-actions" style="display: none;">
+              <button class="btn btn-primary" id="launch-brackets-btn">🚀 Lancer les arbres</button>
             </div>
           </div>
+        </div>
 
-          <div id="poules-container" class="mt-3"></div>
-        </section>
-
-        <!-- ========== SECTION 3 : QUALIFICATION ========== -->
-        <section id="section-qualifiers" class="admin-section">
-          <h2>3. Qualification vers la phase finale</h2>
-          <p class="section-help">Choisissez combien d'équipes par poule se qualifient, et si la consolante est activée. Vous pourrez modifier manuellement les qualifiés avant de lancer les arbres.</p>
-
-          <div id="qualifiers-alert-slot"></div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label for="qualifiers-per-pool">Qualifiés par poule</label>
-              <select id="qualifiers-per-pool" class="select">
-                <option value="1">1 (les premiers uniquement)</option>
-                <option value="2" selected>2 (les 2 premiers)</option>
-                <option value="3">3 (les 3 premiers)</option>
-              </select>
+        <!-- ===== ONGLET ARBRES ===== -->
+        <div class="t-tab-content" data-tournament-tab-content="knockout">
+          <div class="admin-section">
+            <h2>Phase finale</h2>
+            <p class="section-help">Clique sur un match pour saisir le score. Les vainqueurs passent au tour suivant automatiquement.</p>
+            <div class="tabs">
+              <button class="tab active" data-bracket-tab="gold">🏆 Tableau Or</button>
+              <button class="tab" data-bracket-tab="silver">🥈 Consolante</button>
             </div>
-            <div class="form-group">
-              <label class="checkbox-group">
-                <input type="checkbox" id="enable-consolante" checked />
-                <span>Activer la consolante (arbre pour les non-qualifiés)</span>
+            <div id="knockout-container"></div>
+          </div>
+        </div>
+
+        <!-- ===== ONGLET PLANNING ===== -->
+        <div class="t-tab-content" data-tournament-tab-content="schedule">
+          <div class="admin-section">
+            <h2>Planning de matchs</h2>
+            <p class="section-help">Définis les terrains, la durée des matchs, les pauses. Étale sur plusieurs jours si besoin.</p>
+
+            <h3>⚙️ Configuration</h3>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="nb-terrains">Nombre de terrains</label>
+                <input type="number" id="nb-terrains" class="input" min="1" max="10" value="2" />
+              </div>
+              <div class="form-group">
+                <label for="match-duration">Durée d'un match (min)</label>
+                <input type="number" id="match-duration" class="input" min="5" max="60" value="20" />
+              </div>
+              <div class="form-group">
+                <label for="break-between">Pause entre matchs (min)</label>
+                <input type="number" id="break-between" class="input" min="0" max="30" value="5" />
+              </div>
+              <div class="form-group">
+                <label for="lunch-break">Pause déjeuner (min)</label>
+                <input type="number" id="lunch-break" class="input" min="0" max="180" value="60" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="start-time">Heure de début</label>
+                <input type="time" id="start-time" class="input" value="09:00" />
+              </div>
+              <div class="form-group">
+                <label for="end-time">Heure de fin</label>
+                <input type="time" id="end-time" class="input" value="18:00" />
+              </div>
+              <div class="form-group">
+                <label class="checkbox-group">
+                  <input type="checkbox" id="toggle-split-days" />
+                  <span>Étaler sur plusieurs jours</span>
+                </label>
+              </div>
+            </div>
+
+            <div id="days-container" class="mt-3"></div>
+            <div class="mt-3" id="add-day-row" style="display:none;">
+              <button class="btn btn-sm btn-accent" id="add-day-btn">+ Ajouter un jour</button>
+            </div>
+
+            <div class="mt-3 flex gap-2" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+              <button class="btn btn-primary" id="generate-schedule-btn">📅 Générer le planning</button>
+              <button class="btn btn-ghost" id="export-schedule-btn" style="background: var(--color-primary); color: #fff; border-color: var(--color-primary);">📸 Exporter en image</button>
+              <label class="checkbox-group" style="margin-left: 12px;">
+                <input type="checkbox" id="schedule-public-visible" />
+                <span>Visible côté public</span>
               </label>
-              <p class="help">Si activée, les équipes non-qualifiées jouent aussi un arbre à part.</p>
             </div>
+
+            <div id="schedule-container" class="mt-3"></div>
           </div>
+        </div>
 
-          <div id="qualifiers-preview" class="mt-3"></div>
-
-          <div class="mt-3" id="qualifiers-actions" style="display: none;">
-            <button class="btn btn-primary" id="launch-brackets-btn">🚀 Lancer les arbres</button>
+        <!-- ===== ONGLET HISTORIQUE ===== -->
+        <div class="t-tab-content" data-tournament-tab-content="history">
+          <div class="admin-section">
+            <h2>Historique du tournoi</h2>
+            <p class="section-help">Tous les événements du tournoi, dans l'ordre chronologique inverse.</p>
+            <div id="history-list"></div>
           </div>
-        </section>
+        </div>
 
-        <!-- ========== SECTION 4 : PHASE FINALE ========== -->
-        <section id="section-knockout" class="admin-section">
-          <h2>4. Phase finale</h2>
-          <p class="section-help">Cliquez sur un match pour saisir le score et désigner le vainqueur. Les vainqueurs sont automatiquement propagés au tour suivant.</p>
+        <!-- ===== ONGLET EXPORT ===== -->
+        <div class="t-tab-content" data-tournament-tab-content="export">
+          <div class="admin-section">
+            <h2>Export &amp; sauvegarde</h2>
+            <p class="section-help">Exporte les arbres en image, ou télécharge une sauvegarde complète de tous tes tournois (JSON).</p>
 
-          <div class="tabs">
-            <button class="tab active" data-bracket-tab="gold">🏆 Tableau Or</button>
-            <button class="tab" data-bracket-tab="silver">🥈 Consolante</button>
+            <h3>Export image des arbres</h3>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="export-select">Quel arbre exporter ?</label>
+                <select id="export-select" class="select">
+                  <option value="gold">Arbre Or uniquement</option>
+                  <option value="silver">Consolante uniquement</option>
+                  <option value="both">Les deux arbres</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="export-format">Format</label>
+                <select id="export-format" class="select">
+                  <option value="png">PNG</option>
+                  <option value="jpg">JPG (plus léger)</option>
+                </select>
+              </div>
+              <div class="form-group" style="flex: 0; min-width: auto;">
+                <label>&nbsp;</label>
+                <button class="btn btn-primary" id="export-btn">📸 Exporter</button>
+              </div>
+            </div>
+
+            <h3 class="mt-3">Sauvegarde JSON</h3>
+            <div class="form-row">
+              <div class="form-group">
+                <button class="btn btn-ghost" id="export-json-btn" style="background: var(--color-primary); color: #fff; border-color: var(--color-primary);">💾 Télécharger sauvegarde</button>
+              </div>
+              <div class="form-group">
+                <label for="import-json-input" class="btn btn-ghost" style="background: var(--color-surface-2); color: var(--color-text); border: 1px solid var(--color-border); cursor: pointer;">📂 Restaurer depuis JSON</label>
+                <input type="file" id="import-json-input" accept=".json,application/json" style="display:none" />
+              </div>
+            </div>
+
+            <h3 class="mt-3">Réinitialisation</h3>
+            <button class="btn btn-danger" id="nav-reset">⚠ Réinitialiser ce tournoi</button>
           </div>
-          <div id="knockout-container"></div>
-        </section>
+        </div>
 
-        <!-- ========== SECTION 5 : PLANNING ========== -->
-        <section id="section-schedule" class="admin-section">
-          <h2>5. Planning de matchs</h2>
-          <p class="section-help">Définis les terrains, la durée des matchs, les pauses et l'étalement sur plusieurs jours. Le planning est généré automatiquement.</p>
+      </div>
+    </section>
 
-          <h3>Configuration</h3>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="nb-terrains">Nombre de terrains</label>
-              <input type="number" id="nb-terrains" class="input" min="1" max="10" value="2" />
-            </div>
-            <div class="form-group">
-              <label for="match-duration">Durée d'un match (min)</label>
-              <input type="number" id="match-duration" class="input" min="5" max="60" value="20" />
-            </div>
-            <div class="form-group">
-              <label for="break-between">Pause entre matchs (min)</label>
-              <input type="number" id="break-between" class="input" min="0" max="30" value="5" />
-            </div>
-            <div class="form-group">
-              <label for="lunch-break">Pause déjeuner (min)</label>
-              <input type="number" id="lunch-break" class="input" min="0" max="180" value="60" />
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="start-time">Heure de début</label>
-              <input type="time" id="start-time" class="input" value="09:00" />
-            </div>
-            <div class="form-group">
-              <label for="end-time">Heure de fin</label>
-              <input type="time" id="end-time" class="input" value="18:00" />
-            </div>
-            <div class="form-group">
-              <label class="checkbox-group">
-                <input type="checkbox" id="toggle-split-days" />
-                <span>Étaler sur plusieurs jours</span>
-              </label>
-            </div>
-          </div>
-
-          <div id="days-container" class="mt-3"></div>
-          <div class="mt-3" id="add-day-row" style="display:none;">
-            <button class="btn btn-sm btn-accent" id="add-day-btn">+ Ajouter un jour</button>
-          </div>
-
-          <div class="mt-3 flex gap-2" style="display:flex; gap:8px; flex-wrap:wrap;">
-            <button class="btn btn-primary" id="generate-schedule-btn">📅 Générer le planning</button>
-            <button class="btn btn-ghost" id="export-schedule-btn" style="background: var(--color-primary); color: #fff; border-color: var(--color-primary);">📸 Exporter en image</button>
-          </div>
-
-          <div id="schedule-container" class="mt-3"></div>
-        </section>
-
-        <!-- ========== SECTION 6 : HISTORIQUE ========== -->
-        <section id="section-history" class="admin-section">
-          <h2>6. Historique du tournoi</h2>
-          <p class="section-help">Tous les événements du tournoi, dans l'ordre chronologique inverse. Utile pour suivre ce qui s'est passé en cas de doute.</p>
-          <div id="history-list"></div>
-        </section>
-
-        <!-- ========== SECTION 7 : EXPORT & SAUVEGARDE ========== -->
-        <section id="section-export" class="admin-section">
-          <h2>7. Export & sauvegarde</h2>
-          <p class="section-help">Exportez l'arbre final en image, ou téléchargez une sauvegarde complète de tous vos tournois (au format JSON).</p>
-
-          <h3>Export image</h3>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="export-select">Quel arbre exporter ?</label>
-              <select id="export-select" class="select">
-                <option value="gold">Arbre Or uniquement</option>
-                <option value="silver">Consolante uniquement</option>
-                <option value="both">Les deux arbres (PNG large)</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="export-format">Format</label>
-              <select id="export-format" class="select">
-                <option value="png">PNG (fond transparent géré)</option>
-                <option value="jpg">JPG (plus léger)</option>
-              </select>
-            </div>
-            <div class="form-group" style="flex: 0; min-width: auto;">
-              <label>&nbsp;</label>
-              <button class="btn btn-primary" id="export-btn">📸 Exporter l'image</button>
-            </div>
-          </div>
-
-          <h3 class="mt-3">Sauvegarde / restauration</h3>
-          <div class="form-row">
-            <div class="form-group">
-              <button class="btn btn-ghost" id="export-json-btn" style="background: var(--color-primary); color: #fff; border-color: var(--color-primary);">💾 Télécharger sauvegarde JSON</button>
-            </div>
-            <div class="form-group">
-              <label for="import-json-input" class="btn btn-ghost" style="background: var(--color-surface-2); color: var(--color-text); border: 1px solid var(--color-border); cursor: pointer;">📂 Restaurer depuis JSON</label>
-              <input type="file" id="import-json-input" accept=".json,application/json" style="display:none" />
-            </div>
-          </div>
-        </section>
-      </main>
-    </div>
   </div>
 
   <!-- Modal pour saisir un score de bracket -->
@@ -331,14 +371,26 @@ Aviron Bayonne
     </div>
   </div>
 
-  <!-- Modal : gestion de tous les tournois -->
-  <div class="modal-backdrop" id="tournament-modal">
-    <div class="modal" style="max-width: 720px;">
-      <h3>⚙️ Gestion des tournois</h3>
-      <p class="muted" style="margin-top:-8px;">Crée, duplique, renomme, archive ou supprime tes tournois.</p>
-      <div id="tournament-list"></div>
+  <!-- Modal : éditer un créneau de planning -->
+  <div class="modal-backdrop" id="schedule-edit-modal">
+    <div class="modal">
+      <h3>✏️ Modifier le créneau</h3>
+      <div class="form-group">
+        <label for="se-date">Date</label>
+        <input type="date" id="se-date" class="input" />
+      </div>
+      <div class="form-group">
+        <label for="se-time">Heure</label>
+        <input type="time" id="se-time" class="input" />
+      </div>
+      <div class="form-group">
+        <label for="se-terrain">Terrain</label>
+        <input type="number" id="se-terrain" class="input" min="1" max="20" />
+      </div>
+      <div id="se-error"></div>
       <div class="modal-actions">
-        <button class="btn btn-ghost" id="tournament-modal-close" style="background: var(--color-surface-2); color: var(--color-text);">Fermer</button>
+        <button class="btn btn-ghost" id="se-cancel" style="background: var(--color-surface-2); color: var(--color-text);">Annuler</button>
+        <button class="btn btn-success" id="se-save">Enregistrer</button>
       </div>
     </div>
   </div>

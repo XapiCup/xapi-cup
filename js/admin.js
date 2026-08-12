@@ -1,9 +1,8 @@
 /* ================================================================
-   ADMIN.JS — Logique complète de la page administrateur
-   - Multi-tournois
-   - Poules, qualification, arbres
-   - Planning
-   - Historique
+   ADMIN.JS — Logique page administrateur
+   - Vue Dashboard (cards de tournois)
+   - Vue Tournoi (onglets : Équipes / Poules / Arbres / Planning / Historique / Export)
+   - Multi-tournois, planning éditable, fix bug poules, etc.
    ================================================================ */
 
 import { store, DEFAULT_TOURNAMENT } from './state.js';
@@ -15,15 +14,16 @@ import {
 import { renderPoule, renderBracket } from './render.js';
 import { $, $$, el, clear, toast, downloadFile, onReady } from './app.js';
 import { exportElementAsImage } from './export.js';
-import {
-  isAuthenticated, renderLoginScreen, bindLogoutButton,
-} from './auth.js';
+import { isAuthenticated, renderLoginScreen, bindLogoutButton } from './auth.js';
 
 // ================================================================
-// STATE LOCAL (UI)
+// STATE LOCAL
 // ================================================================
+let view = 'dashboard';     // 'dashboard' | 'tournament'
+let activeTab = 'teams';    // onglet dans la vue tournament
 let activeBracketTab = 'gold';
 let activeScheduleTab = 'poules';
+let editingSlot = null;     // {matchId, original} pour la modal d'édition planning
 
 // ================================================================
 // ENTRY POINT
@@ -49,16 +49,27 @@ onReady(() => {
   bindUI();
   bindLogoutButton();
   bindPasswordChange();
-  bindTournamentUI();
+  bindDashboardUI();
 
   store.subscribe(() => {
-    renderTournamentSelector();
-    renderAll();
+    if (view === 'dashboard') renderDashboard();
+    else renderTournamentPage();
   });
-  renderTournamentSelector();
-  renderAll();
+
+  // Décide la vue initiale selon l'URL
+  const params = new URLSearchParams(location.search);
+  const tid = params.get('t');
+  if (tid && store.getTournament(tid)) {
+    store.switchTournament(tid);
+    showTournamentView();
+  } else {
+    showDashboardView();
+  }
 });
 
+// ================================================================
+// SESSION TIMER
+// ================================================================
 function updateSessionTimer() {
   const slot = $('#session-timer');
   if (!slot) return;
@@ -74,193 +85,85 @@ function updateSessionTimer() {
 }
 
 // ================================================================
-// TOURNAMENT SELECTOR (en haut de l'admin)
+// NAVIGATION ENTRE VUES
 // ================================================================
-function bindTournamentUI() {
-  // Sélecteur principal
-  const sel = $('#tournament-select');
-  if (sel) {
-    sel.addEventListener('change', (e) => {
-      store.switchTournament(e.target.value);
-      toast('Tournoi chargé.', 'success');
-    });
-  }
-  // Bouton "Nouveau"
-  const newBtn = $('#tournament-new-btn');
-  if (newBtn) {
-    newBtn.addEventListener('click', () => {
-      const name = prompt('Nom du nouveau tournoi :', `Xapi Cup ${new Date().getFullYear()}`);
-      if (!name) return;
-      const t = store.createTournament(name.trim());
-      toast(`Tournoi "${t.name}" créé.`, 'success');
-    });
-  }
-  // Bouton "Dupliquer"
-  const dupBtn = $('#tournament-duplicate-btn');
-  if (dupBtn) {
-    dupBtn.addEventListener('click', () => {
-      const t = store.currentTournament();
-      if (!t) return;
-      const copy = store.duplicateTournament(t.id);
-      if (copy) toast(`"${t.name}" dupliqué.`, 'success');
-    });
-  }
-  // Bouton "Renommer"
-  const renBtn = $('#tournament-rename-btn');
-  if (renBtn) {
-    renBtn.addEventListener('click', () => {
-      const t = store.currentTournament();
-      if (!t) return;
-      const name = prompt('Nouveau nom :', t.name);
-      if (name && name.trim()) {
-        store.renameTournament(t.id, name.trim());
-        toast('Renommé.', 'success');
-      }
-    });
-  }
-  // Bouton "Archiver"
-  const archBtn = $('#tournament-archive-btn');
-  if (archBtn) {
-    archBtn.addEventListener('click', () => {
-      const t = store.currentTournament();
-      if (!t) return;
-      store.archiveTournament(t.id);
-      toast(t.archived ? 'Archivé.' : 'Désarchivé.', 'success');
-      renderTournamentSelector();
-    });
-  }
-  // Bouton "Supprimer"
-  const delBtn = $('#tournament-delete-btn');
-  if (delBtn) {
-    delBtn.addEventListener('click', () => {
-      const t = store.currentTournament();
-      if (!t) return;
-      if (!confirm(`Supprimer définitivement "${t.name}" ?`)) return;
-      store.deleteTournament(t.id);
-      toast('Supprimé.', 'warn');
-    });
-  }
-  // Bouton "Gérer" (modal liste des tournois)
-  const manageBtn = $('#tournament-manage-btn');
-  if (manageBtn) {
-    manageBtn.addEventListener('click', () => {
-      renderTournamentManager();
-      $('#tournament-modal').classList.add('show');
-    });
-  }
-  $('#tournament-modal-close')?.addEventListener('click', () => {
-    $('#tournament-modal').classList.remove('show');
-  });
+function showDashboardView() {
+  view = 'dashboard';
+  $('#view-dashboard').style.display = '';
+  $('#view-tournament').style.display = 'none';
+  // Update URL
+  const url = new URL(location.href);
+  url.searchParams.delete('t');
+  history.replaceState(null, '', url.toString());
+  renderDashboard();
 }
 
-function renderTournamentSelector() {
-  const sel = $('#tournament-select');
-  if (!sel) return;
-  const ts = store.listTournaments();
-  const cur = store.state.currentTournamentId;
-  sel.innerHTML = '';
-  ts.forEach((t) => {
-    const opt = document.createElement('option');
-    opt.value = t.id;
-    opt.textContent = (t.archived ? '📦 ' : '') + t.name;
-    if (t.id === cur) opt.selected = true;
-    sel.appendChild(opt);
-  });
-  const curT = store.currentTournament();
-  const nameEl = $('#current-tournament-name');
-  if (nameEl && curT) {
-    nameEl.textContent = curT.name + (curT.archived ? ' (archivé)' : '');
+function showTournamentView() {
+  view = 'tournament';
+  $('#view-dashboard').style.display = 'none';
+  $('#view-tournament').style.display = '';
+  // Update URL
+  const t = store.currentTournament();
+  if (t) {
+    const url = new URL(location.href);
+    url.searchParams.set('t', t.id);
+    history.replaceState(null, '', url.toString());
   }
-  const archBtn = $('#tournament-archive-btn');
-  if (archBtn && curT) {
-    archBtn.textContent = curT.archived ? '↩ Désarchiver' : '📦 Archiver';
-  }
-}
-
-function renderTournamentManager() {
-  const list = $('#tournament-list');
-  if (!list) return;
-  clear(list);
-  store.listTournaments().forEach((t) => {
-    const isCur = t.id === store.state.currentTournamentId;
-    const item = el('div', {
-      class: 'tournament-item' + (isCur ? ' active' : '') + (t.archived ? ' archived' : ''),
-    },
-      el('div', { class: 't-item-name' },
-        el('strong', {}, t.name),
-        isCur ? el('span', { class: 'badge' }, 'actif') : null,
-        t.archived ? el('span', { class: 'badge badge-archive' }, 'archivé') : null,
-        el('div', { class: 'muted', style: { fontSize: '0.85rem' } },
-          `${t.teams.length} équipes · ${t.matches.length} matchs de poule · ${t.phase}`)
-      ),
-      el('div', { class: 't-item-actions' },
-        !isCur ? el('button', {
-          class: 'btn btn-sm btn-primary',
-          onclick: () => { store.switchTournament(t.id); $('#tournament-modal').classList.remove('show'); toast('Chargé.', 'success'); }
-        }, 'Charger') : null,
-        el('button', {
-          class: 'btn btn-sm btn-ghost',
-          style: { background: 'var(--color-surface-2)', color: 'var(--color-text)', border: '1px solid var(--color-border)' },
-          onclick: () => {
-            const n = prompt('Nouveau nom :', t.name);
-            if (n) { store.renameTournament(t.id, n.trim()); renderTournamentManager(); }
-          }
-        }, '✏️'),
-        el('button', {
-          class: 'btn btn-sm btn-ghost',
-          style: { background: 'var(--color-surface-2)', color: 'var(--color-text)', border: '1px solid var(--color-border)' },
-          onclick: () => { store.duplicateTournament(t.id); renderTournamentManager(); }
-        }, '📋'),
-        el('button', {
-          class: 'btn btn-sm',
-          style: { background: 'var(--color-surface-2)', color: 'var(--color-text)', border: '1px solid var(--color-border)' },
-          onclick: () => { store.archiveTournament(t.id); renderTournamentManager(); renderTournamentSelector(); }
-        }, t.archived ? '↩' : '📦'),
-        el('button', {
-          class: 'btn btn-sm btn-danger',
-          onclick: () => {
-            if (confirm(`Supprimer "${t.name}" ?`)) { store.deleteTournament(t.id); renderTournamentManager(); renderTournamentSelector(); }
-          }
-        }, '🗑️')
-      )
-    );
-    list.appendChild(item);
-  });
+  renderTournamentPage();
 }
 
 // ================================================================
-// RENDU GLOBAL
-// ================================================================
-function renderAll() {
-  renderTeamsList();
-  renderPoulesSection();
-  renderQualifiersSection();
-  renderKnockoutSection();
-  renderScheduleSection();
-  renderHistorySection();
-  syncSelectsWithState();
-}
-
-// ================================================================
-// BINDING UI GÉNÉRAL
+// BINDINGS GÉNÉRAUX
 // ================================================================
 function bindUI() {
-  $$('.admin-nav a[data-tab]').forEach((a) => {
-    a.addEventListener('click', (e) => {
-      e.preventDefault();
-      $$('.admin-nav a').forEach((x) => x.classList.remove('active'));
-      a.classList.add('active');
-      const target = document.getElementById('section-' + a.dataset.tab);
-      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Bouton "Retour au dashboard"
+  $('#back-to-dashboard')?.addEventListener('click', showDashboardView);
+
+  // Onglets de la page tournoi
+  $$('.t-tab').forEach((t) => {
+    t.addEventListener('click', () => {
+      activeTab = t.dataset.tournamentTab;
+      $$('.t-tab').forEach((x) => x.classList.remove('active'));
+      t.classList.add('active');
+      $$('.t-tab-content').forEach((c) => c.classList.remove('active'));
+      const target = $(`.t-tab-content[data-tournament-tab-content="${activeTab}"]`);
+      if (target) target.classList.add('active');
+      renderTournamentTab(activeTab);
     });
   });
 
-  $('#nav-reset')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    store.resetCurrent();
-    toast('Tournoi réinitialisé.', 'warn');
+  // Actions du header de page tournoi
+  $('#tournament-rename-btn-page')?.addEventListener('click', () => {
+    const t = store.currentTournament();
+    if (!t) return;
+    const n = prompt('Nouveau nom :', t.name);
+    if (n && n.trim()) {
+      store.renameTournament(t.id, n.trim());
+      toast('Renommé.', 'success');
+    }
+  });
+  $('#tournament-archive-btn-page')?.addEventListener('click', () => {
+    const t = store.currentTournament();
+    if (!t) return;
+    store.archiveTournament(t.id);
+    toast(t.archived ? 'Archivé.' : 'Désarchivé.', 'success');
+  });
+  $('#tournament-duplicate-btn-page')?.addEventListener('click', () => {
+    const t = store.currentTournament();
+    if (!t) return;
+    const copy = store.duplicateTournament(t.id);
+    if (copy) toast(`"${t.name}" dupliqué.`, 'success');
+  });
+  $('#tournament-delete-btn-page')?.addEventListener('click', () => {
+    const t = store.currentTournament();
+    if (!t) return;
+    if (!confirm(`Supprimer définitivement "${t.name}" ?`)) return;
+    store.deleteTournament(t.id);
+    toast('Supprimé.', 'warn');
+    showDashboardView();
   });
 
+  // ===== Onglet Équipes =====
   $('#add-team-btn')?.addEventListener('click', addTeamFromInput);
   $('#team-input')?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); addTeamFromInput(); }
@@ -274,7 +177,7 @@ function bindUI() {
     toast(`${added.length} équipe(s) ajoutée(s).`, 'success');
   });
   $('#clear-teams-btn')?.addEventListener('click', () => {
-    if (!confirm('Supprimer toutes les équipes ?')) return;
+    if (!confirm('Supprimer toutes les équipes de ce tournoi ?')) return;
     store.setCurrent((s) => {
       s.teams = []; s.poules = []; s.matches = [];
       s.brackets = { gold: null, silver: null }; s.bracketMatches = [];
@@ -284,6 +187,7 @@ function bindUI() {
     toast('Liste vidée.', 'warn');
   });
 
+  // ===== Onglet Poules =====
   $('#generate-poules-btn')?.addEventListener('click', () => {
     const t = store.currentTournament();
     if (!t) return;
@@ -293,7 +197,6 @@ function bindUI() {
     if (!confirm(`Tirer ${nbPoules} poules pour ${t.teams.length} équipes ?`)) return;
     runPouleDraw();
   });
-
   $('#qualifiers-per-pool')?.addEventListener('change', (e) => {
     const v = parseInt(e.target.value, 10);
     store.setCurrent((s) => { s.config.qualifiersPerPool = v; });
@@ -303,24 +206,17 @@ function bindUI() {
   });
   $('#launch-brackets-btn')?.addEventListener('click', launchBrackets);
 
+  // ===== Onglet Arbres =====
   $$('.tab[data-bracket-tab]').forEach((t) => {
     t.addEventListener('click', () => {
       $$('.tab[data-bracket-tab]').forEach((x) => x.classList.remove('active'));
       t.classList.add('active');
       activeBracketTab = t.dataset.bracketTab;
-      renderKnockoutSection();
+      renderKnockoutTab();
     });
   });
 
-  // Schedule tabs
-  $$('.tab[data-schedule-tab]').forEach((t) => {
-    t.addEventListener('click', () => {
-      $$('.tab[data-schedule-tab]').forEach((x) => x.classList.remove('active'));
-      t.classList.add('active');
-      activeScheduleTab = t.dataset.scheduleTab;
-      renderScheduleSection();
-    });
-  });
+  // ===== Onglet Planning =====
   $('#generate-schedule-btn')?.addEventListener('click', generateScheduleForCurrent);
   $('#export-schedule-btn')?.addEventListener('click', exportScheduleAsImage);
   $('#toggle-split-days')?.addEventListener('change', (e) => {
@@ -336,18 +232,28 @@ function bindUI() {
     });
     renderScheduleConfig();
   });
-
-  // Schedule config inputs (rebind dynamically)
+  $('#schedule-public-visible')?.addEventListener('change', (e) => {
+    store.setCurrent((s) => { s.config.schedulePublic = e.target.checked; });
+    toast(e.target.checked ? 'Planning visible côté public.' : 'Planning caché côté public.', 'info');
+  });
   ['nb-terrains','match-duration','break-between','lunch-break','start-time','end-time'].forEach((id) => {
-    const k = id.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-    const map = { nbTerrains: 'nbTerrains', matchDurationMin: 'matchDurationMin', breakBetweenMin: 'breakBetweenMin', lunchBreakMin: 'lunchBreakMin', startTime: 'startTime', endTime: 'endTime' };
-    const field = map[k];
+    const map = { 'nb-terrains': 'nbTerrains', 'match-duration': 'matchDurationMin', 'break-between': 'breakBetweenMin', 'lunch-break': 'lunchBreakMin', 'start-time': 'startTime', 'end-time': 'endTime' };
+    const field = map[id];
     $(`#${id}`)?.addEventListener('change', (e) => {
       const v = (id === 'start-time' || id === 'end-time') ? e.target.value : parseInt(e.target.value, 10);
       store.setCurrent((s) => { s.config[field] = v; });
     });
   });
+  $$('.tab[data-schedule-tab]').forEach((t) => {
+    t.addEventListener('click', () => {
+      $$('.tab[data-schedule-tab]').forEach((x) => x.classList.remove('active'));
+      t.classList.add('active');
+      activeScheduleTab = t.dataset.scheduleTab;
+      renderScheduleTab();
+    });
+  });
 
+  // ===== Onglet Export =====
   $('#export-btn')?.addEventListener('click', handleExportImage);
   $('#export-json-btn')?.addEventListener('click', () => {
     const t = store.currentTournament();
@@ -363,13 +269,36 @@ function bindUI() {
     if (store.importJSON(text)) toast('Sauvegarde restaurée.', 'success');
     e.target.value = '';
   });
+  $('#nav-reset')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    store.resetCurrent();
+    toast('Tournoi réinitialisé.', 'warn');
+  });
 
-  // Modal bracket
+  // ===== Modal bracket =====
   $('#modal-cancel')?.addEventListener('click', closeBracketModal);
   $('#bracket-modal')?.addEventListener('click', (e) => {
     if (e.target.id === 'bracket-modal') closeBracketModal();
   });
   $('#modal-save')?.addEventListener('click', saveBracketModal);
+
+  // ===== Modal planning =====
+  $('#se-cancel')?.addEventListener('click', closeScheduleEditModal);
+  $('#schedule-edit-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'schedule-edit-modal') closeScheduleEditModal();
+  });
+  $('#se-save')?.addEventListener('click', saveScheduleEditModal);
+}
+
+function bindDashboardUI() {
+  $('#dashboard-new-btn')?.addEventListener('click', () => {
+    const name = prompt('Nom du nouveau tournoi :', `Xapi Cup ${new Date().getFullYear()}`);
+    if (!name) return;
+    const t = store.createTournament(name.trim());
+    toast(`Tournoi "${t.name}" créé.`, 'success');
+    // Ouvre directement le nouveau tournoi
+    setTimeout(() => showTournamentView(), 200);
+  });
 }
 
 function bindPasswordChange() {
@@ -404,6 +333,172 @@ function bindPasswordChange() {
 }
 
 // ================================================================
+// DASHBOARD
+// ================================================================
+function renderDashboard() {
+  const ts = store.listTournaments();
+  const active = ts.filter((t) => !t.archived);
+  const archived = ts.filter((t) => t.archived);
+
+  // Stats globales
+  const totalTeams = active.reduce((acc, t) => acc + t.teams.length, 0);
+  const totalMatches = active.reduce((acc, t) => acc + t.matches.length + (t.bracketMatches?.length || 0), 0);
+  const live = active.filter((t) => t.phase === 'poules' || t.phase === 'knockout').length;
+
+  $('#dashboard-stats').innerHTML = '';
+  $('#dashboard-stats').appendChild(el('div', { class: 'stat-card' },
+    el('div', { class: 'stat-num' }, String(active.length)),
+    el('div', { class: 'stat-label' }, 'Tournois actifs')
+  ));
+  $('#dashboard-stats').appendChild(el('div', { class: 'stat-card' },
+    el('div', { class: 'stat-num' }, String(totalTeams)),
+    el('div', { class: 'stat-label' }, 'Équipes')
+  ));
+  $('#dashboard-stats').appendChild(el('div', { class: 'stat-card' },
+    el('div', { class: 'stat-num' }, String(totalMatches)),
+    el('div', { class: 'stat-label' }, 'Matchs')
+  ));
+  $('#dashboard-stats').appendChild(el('div', { class: 'stat-card' },
+    el('div', { class: 'stat-num' }, String(live)),
+    el('div', { class: 'stat-label' }, 'En cours')
+  ));
+
+  // Cards actifs
+  const cards = $('#tournament-cards');
+  clear(cards);
+  // Card "Créer"
+  cards.appendChild(el('div', {
+    class: 't-card t-card-create',
+    onclick: () => $('#dashboard-new-btn').click(),
+  },
+    el('div', { class: 't-card-create-icon' }, '+'),
+    el('div', { class: 't-card-create-label' }, 'Nouveau tournoi'),
+  ));
+  // Cards existantes
+  active.forEach((t) => cards.appendChild(buildTournamentCard(t)));
+
+  // Cards archivés
+  if (archived.length) {
+    $('#archived-section-title').style.display = '';
+    const archCards = $('#tournament-cards-archived');
+    clear(archCards);
+    archived.forEach((t) => archCards.appendChild(buildTournamentCard(t)));
+  } else {
+    $('#archived-section-title').style.display = 'none';
+  }
+}
+
+function buildTournamentCard(t) {
+  const phaseLabels = {
+    'setup': ['⚙️ Config', 'badge-setup'],
+    'poules': ['📋 Poules', 'badge-poules'],
+    'finished-pool': ['✅ Poules finies', 'badge-poules'],
+    'knockout': ['🔥 Arbres', 'badge-knockout'],
+    'finished': ['🏆 Terminé', 'badge-finished'],
+  };
+  const [label, badgeClass] = phaseLabels[t.phase] || ['—', 'badge-setup'];
+
+  const card = el('div', { class: 't-card' + (t.archived ? ' archived' : '') },
+    el('div', { class: 't-card-header' },
+      el('h3', { class: 't-card-name' }, t.name),
+      el('span', { class: `t-card-badge ${badgeClass}` }, label),
+    ),
+    el('div', { class: 't-card-stats' },
+      el('div', { class: 't-card-stat' },
+        el('div', { class: 't-card-stat-num' }, String(t.teams.length)),
+        el('div', { class: 't-card-stat-label' }, 'Équipes')
+      ),
+      el('div', { class: 't-card-stat' },
+        el('div', { class: 't-card-stat-num' }, String(t.poules.length)),
+        el('div', { class: 't-card-stat-label' }, 'Poules')
+      ),
+      el('div', { class: 't-card-stat' },
+        el('div', { class: 't-card-stat-num' }, String(t.matches.length + (t.bracketMatches?.length || 0))),
+        el('div', { class: 't-card-stat-label' }, 'Matchs')
+      ),
+    ),
+    el('div', { class: 't-card-actions' },
+      el('button', { class: 'btn btn-sm btn-primary',
+        onclick: (e) => { e.stopPropagation(); openTournament(t.id); }
+      }, '📂 Ouvrir'),
+      el('button', { class: 'btn btn-sm',
+        style: { background: 'var(--color-surface-2)', color: 'var(--color-text)', border: '1px solid var(--color-border)' },
+        onclick: (e) => { e.stopPropagation(); duplicateTournament(t.id); }
+      }, '📋'),
+      el('button', { class: 'btn btn-sm',
+        style: { background: 'var(--color-surface-2)', color: 'var(--color-text)', border: '1px solid var(--color-border)' },
+        onclick: (e) => { e.stopPropagation(); archiveTournament(t.id); }
+      }, t.archived ? '↩' : '📦'),
+      el('button', { class: 'btn btn-sm btn-danger',
+        onclick: (e) => { e.stopPropagation(); deleteTournament(t.id); }
+      }, '🗑️'),
+    )
+  );
+  // Click sur la card (hors boutons) = ouvrir
+  card.addEventListener('click', () => openTournament(t.id));
+  return card;
+}
+
+function openTournament(id) {
+  store.switchTournament(id);
+  showTournamentView();
+}
+
+function duplicateTournament(id) {
+  const t = store.getTournament(id);
+  if (!t) return;
+  const copy = store.duplicateTournament(id);
+  if (copy) toast(`"${t.name}" dupliqué.`, 'success');
+}
+
+function archiveTournament(id) {
+  const t = store.getTournament(id);
+  if (!t) return;
+  store.archiveTournament(id);
+  toast(t.archived ? 'Désarchivé.' : 'Archivé.', 'info');
+}
+
+function deleteTournament(id) {
+  const t = store.getTournament(id);
+  if (!t) return;
+  if (!confirm(`Supprimer définitivement "${t.name}" ?`)) return;
+  store.deleteTournament(id);
+  toast('Supprimé.', 'warn');
+}
+
+// ================================================================
+// PAGE DE TOURNOI
+// ================================================================
+function renderTournamentPage() {
+  const t = store.currentTournament();
+  if (!t) {
+    showDashboardView();
+    return;
+  }
+  $('#tournament-page-title').textContent = t.name;
+  const phaseLabels = {
+    'setup': '⚙️ Configuration', 'poules': '📋 Phase de poules',
+    'finished-pool': '✅ Poules terminées', 'knockout': '🔥 Phase finale',
+    'finished': '🏆 Tournoi terminé',
+  };
+  $('#tournament-page-subtitle').textContent =
+    `${t.teams.length} équipes · ${t.matches.length} matchs de poule · ${phaseLabels[t.phase] || ''}`;
+
+  renderTournamentTab(activeTab);
+}
+
+function renderTournamentTab(tab) {
+  switch (tab) {
+    case 'teams': renderTeamsTab(); break;
+    case 'poules': renderPoulesTab(); break;
+    case 'knockout': renderKnockoutTab(); break;
+    case 'schedule': renderScheduleTab(); break;
+    case 'history': renderHistoryTab(); break;
+    case 'export': renderExportTab(); break;
+  }
+}
+
+// ================================================================
 // TEAMS
 // ================================================================
 function addTeamFromInput() {
@@ -412,7 +507,7 @@ function addTeamFromInput() {
   if (!t) { toast('Nom invalide ou déjà présent.', 'warn'); return; }
   input.value = ''; input.focus();
 }
-function renderTeamsList() {
+function renderTeamsTab() {
   const list = $('#teams-list');
   if (!list) return;
   clear(list);
@@ -433,10 +528,11 @@ function renderTeamsList() {
       }, '×')
     ));
   });
+  syncSelectsWithState();
 }
 
 // ================================================================
-// POULES
+// POULES + QUALIFICATION
 // ================================================================
 function runPouleDraw() {
   const t = store.currentTournament();
@@ -454,10 +550,12 @@ function runPouleDraw() {
     s.history.push({ at: new Date().toISOString(), type: 'poules-draw', label: `Tirage : ${nbPoules} poules, ${matches.length} matchs` });
   });
   toast(`${nbPoules} poules générées · ${matches.length} matchs.`, 'success');
-  $('#section-poules')?.scrollIntoView({ behavior: 'smooth' });
+  renderPoulesTab();
+  renderScheduleTab();
+  renderExportTab();
 }
 
-function renderPoulesSection() {
+function renderPoulesTab() {
   const container = $('#poules-container');
   const alertSlot = $('#poules-alert-slot');
   if (!container || !alertSlot) return;
@@ -466,19 +564,20 @@ function renderPoulesSection() {
   if (!t || !t.poules.length) {
     if (t?.teams.length) {
       alertSlot.appendChild(el('div', { class: 'alert alert-info' },
-        '👆 Cliquez sur « Générer les poules » pour démarrer le tournoi.'));
+        '👆 Clique sur « Générer les poules » pour démarrer.'));
     } else {
       alertSlot.appendChild(el('div', { class: 'alert alert-warn' },
-        '⚠ Inscrivez d\'abord vos équipes dans la section 1.'));
+        '⚠ Inscris d\'abord tes équipes dans l\'onglet Équipes.'));
     }
-    return;
+  } else {
+    const grid = el('div', { class: 'poules-grid' });
+    t.poules.forEach((pouleTeams, idx) => {
+      const matches = t.matches.filter((m) => m.pouleIdx === idx);
+      grid.appendChild(renderPoule(idx, pouleTeams, matches, t.config.qualifiersPerPool, true, handlePouleMatchChange));
+    });
+    container.appendChild(grid);
   }
-  const grid = el('div', { class: 'poules-grid' });
-  t.poules.forEach((pouleTeams, idx) => {
-    const matches = t.matches.filter((m) => m.pouleIdx === idx);
-    grid.appendChild(renderPoule(idx, t.teams, matches, t.config.qualifiersPerPool, true, handlePouleMatchChange));
-  });
-  container.appendChild(grid);
+  renderQualifiersSection();
 }
 
 function handlePouleMatchChange(matchId, teamKey, value) {
@@ -500,9 +599,6 @@ function handlePouleMatchChange(matchId, teamKey, value) {
   });
 }
 
-// ================================================================
-// QUALIFICATION
-// ================================================================
 function renderQualifiersSection() {
   const preview = $('#qualifiers-preview');
   const actions = $('#qualifiers-actions');
@@ -511,7 +607,6 @@ function renderQualifiersSection() {
   clear(preview); clear(alertSlot);
   const t = store.currentTournament();
   if (!t || !t.poules.length) {
-    alertSlot.appendChild(el('div', { class: 'alert alert-warn' }, '⚠ Générez d\'abord les poules (section 2).'));
     actions.style.display = 'none';
     return;
   }
@@ -520,12 +615,12 @@ function renderQualifiersSection() {
     alertSlot.appendChild(el('div', { class: 'alert alert-info' },
       `ℹ️ ${unfinished} match(s) de poule restant(s). Les qualifiés sont calculés en temps réel.`));
   } else if (t.brackets.gold) {
-    alertSlot.appendChild(el('div', { class: 'alert alert-success' }, '✅ Arbres générés. Voir section 4.'));
+    alertSlot.appendChild(el('div', { class: 'alert alert-success' }, '✅ Arbres générés. Voir l\'onglet Arbres.'));
   }
 
   const allStandings = t.poules.map((p, idx) => {
     const matches = t.matches.filter((m) => m.pouleIdx === idx);
-    return computeStandings(t.teams.filter((tm) => p.includes(tm.id)), matches);
+    return computeStandings(p, matches);
   });
   const includeConsolante = t.config.includeConsolante !== false;
   const { gold, consolante } = splitQualifiers(allStandings, t.config.qualifiersPerPool, includeConsolante);
@@ -573,7 +668,7 @@ function launchBrackets() {
   if (!t) return;
   const allStandings = t.poules.map((p, idx) => {
     const matches = t.matches.filter((m) => m.pouleIdx === idx);
-    return computeStandings(t.teams.filter((tm) => p.includes(tm.id)), matches);
+    return computeStandings(p, matches);
   });
   const includeConsolante = t.config.includeConsolante !== false;
   const { gold, consolante } = splitQualifiers(allStandings, t.config.qualifiersPerPool, includeConsolante);
@@ -583,13 +678,10 @@ function launchBrackets() {
   const goldBracket = buildBracket(gold);
   const silverBracket = (includeConsolante && consolante.length >= 2) ? buildBracket(consolante) : null;
 
-  // Aplatir tous les matchs bracket pour le planning
   const allBracketMatches = [];
   [goldBracket, silverBracket].forEach((br) => {
     if (!br) return;
-    br.rounds.forEach((round) => round.forEach((m) => allBracketMatches.push({
-      ...m, _bracket: br === goldBracket ? 'gold' : 'silver'
-    })));
+    br.rounds.forEach((round) => round.forEach((m) => allBracketMatches.push({ ...m })));
   });
 
   store.setCurrent((s) => {
@@ -601,15 +693,17 @@ function launchBrackets() {
       data: { gold: gold.length, consolante: consolante.length } });
   });
   toast(`Arbres générés : ${gold.length} en Or.`, 'success');
-  $('#section-knockout')?.scrollIntoView({ behavior: 'smooth' });
-  activeBracketTab = 'gold';
-  $$('.tab[data-bracket-tab]').forEach((t) => t.classList.toggle('active', t.dataset.bracketTab === 'gold'));
+  // Switch auto sur l'onglet Arbres
+  activeTab = 'knockout';
+  $$('.t-tab').forEach((t) => t.classList.toggle('active', t.dataset.tournamentTab === 'knockout'));
+  $$('.t-tab-content').forEach((c) => c.classList.toggle('active', c.dataset.tournamentTabContent === 'knockout'));
+  renderKnockoutTab();
 }
 
 // ================================================================
-// PHASE FINALE
+// ARBRES
 // ================================================================
-function renderKnockoutSection() {
+function renderKnockoutTab() {
   const container = $('#knockout-container');
   if (!container) return;
   clear(container);
@@ -618,7 +712,7 @@ function renderKnockoutSection() {
     container.appendChild(el('div', { class: 'empty-state' },
       el('div', { class: 'empty-icon' }, '🏆'),
       el('h3', {}, 'Aucun arbre généré pour l\'instant.'),
-      el('p', {}, 'Complétez la section 3 pour lancer la phase finale.')));
+      el('p', {}, 'Termine les poules, puis clique sur "Lancer les arbres" dans l\'onglet Poules.')));
     return;
   }
   if (activeBracketTab === 'gold' && t.brackets.gold) {
@@ -657,8 +751,7 @@ function openBracketModal(match, rIdx, mIdx) {
     el('label', {}, tB.name),
     el('input', { type: 'number', min: '0', class: 'input', id: 'modal-scoreB', value: match.scoreB ?? 0 })));
   body.appendChild(row);
-  body.appendChild(el('p', { class: 'help' },
-    'Saisissez les scores. Vainqueur désigné automatiquement (en cas d\'égalité, on vous demandera).'));
+  body.appendChild(el('p', { class: 'help' }, 'Saisis les scores. Vainqueur désigné automatiquement.'));
   $('#modal-save').textContent = 'Valider le vainqueur';
   $('#bracket-modal').classList.add('show');
   $('#modal-scoreA').focus(); $('#modal-scoreA').select();
@@ -671,9 +764,7 @@ function saveBracketModal() {
   if (!modalContext) return;
   const scoreA = parseInt($('#modal-scoreA').value, 10);
   const scoreB = parseInt($('#modal-scoreB').value, 10);
-  if (isNaN(scoreA) || isNaN(scoreB) || scoreA < 0 || scoreB < 0) {
-    toast('Scores invalides.', 'warn'); return;
-  }
+  if (isNaN(scoreA) || isNaN(scoreB) || scoreA < 0 || scoreB < 0) { toast('Scores invalides.', 'warn'); return; }
   const { kind, rIdx, mIdx } = modalContext;
   let winner = null;
   if (scoreA > scoreB) winner = 'A';
@@ -691,23 +782,17 @@ function saveBracketModal() {
     m.scoreA = scoreA; m.scoreB = scoreB;
     m.winnerSlot = winner; m.finished = true;
     m.finishedAt = new Date().toISOString();
-    // Propage via la fonction importée
     const updated = setBracketScore(br, rIdx, mIdx, scoreA, scoreB);
-    s.brackets[kind] = updated;
-    // Re-applique le winnerSlot car setBracketScore peut l'avoir recalculé
     updated.rounds[rIdx][mIdx].winnerSlot = winner;
     updated.rounds[rIdx][mIdx].finished = true;
-    // Re-propage à la main pour s'assurer
     const winnerId = winner === 'A' ? m.slotA : m.slotB;
     if (rIdx < updated.rounds.length - 1) {
       const nextRound = updated.rounds[rIdx + 1];
       const nextMatch = nextRound[Math.floor(mIdx / 2)];
-      if (Math.floor(mIdx / 2) === Math.floor(mIdx / 2)) {
-        if (mIdx % 2 === 0) nextMatch.slotA = winnerId;
-        else nextMatch.slotB = winnerId;
-      }
+      if (mIdx % 2 === 0) nextMatch.slotA = winnerId;
+      else nextMatch.slotB = winnerId;
     }
-    // Historique
+    s.brackets[kind] = updated;
     const tA = s.teams.find((x) => x.id === m.slotA);
     const tB = s.teams.find((x) => x.id === m.slotB);
     s.history.push({
@@ -727,8 +812,7 @@ function renderScheduleConfig() {
   const t = store.currentTournament();
   if (!t) return;
   const cfg = t.config;
-  // Inputs principaux
-  const setVal = (id, v) => { const el = $(`#${id}`); if (el) el.value = v; };
+  const setVal = (id, v) => { const e = $(`#${id}`); if (e) e.value = v; };
   setVal('nb-terrains', cfg.nbTerrains);
   setVal('match-duration', cfg.matchDurationMin);
   setVal('break-between', cfg.breakBetweenMin);
@@ -736,12 +820,13 @@ function renderScheduleConfig() {
   setVal('start-time', cfg.startTime);
   setVal('end-time', cfg.endTime);
   setVal('toggle-split-days', cfg.splitDays);
+  setVal('schedule-public-visible', cfg.schedulePublic);
 
-  // Days
   const daysContainer = $('#days-container');
   if (daysContainer) {
     clear(daysContainer);
     if (cfg.splitDays) {
+      $('#add-day-row').style.display = '';
       cfg.days = cfg.days || [];
       cfg.days.forEach((day, idx) => {
         const row = el('div', { class: 'form-row', style: { marginBottom: '8px', alignItems: 'end' } },
@@ -764,75 +849,75 @@ function renderScheduleConfig() {
         );
         daysContainer.appendChild(row);
       });
+    } else {
+      $('#add-day-row').style.display = 'none';
     }
   }
 }
 
-function renderScheduleSection() {
+function renderScheduleTab() {
   const t = store.currentTournament();
   if (!t) return;
   renderScheduleConfig();
   const container = $('#schedule-container');
   if (!container) return;
   clear(container);
+
   if (!t.poules.length && !t.brackets.gold) {
     container.appendChild(el('div', { class: 'empty-state' },
       el('div', { class: 'empty-icon' }, '📅'),
-      el('h3', {}, 'Aucun planning pour l\'instant.'),
-      el('p', {}, 'Génère d\'abord les poules (section 2) ou les arbres (section 3).')));
+      el('h3', {}, 'Aucun match à planifier pour l\'instant.'),
+      el('p', {}, 'Génère d\'abord les poules ou les arbres.')));
     return;
   }
-  // Tabs : planning poules / planning phase finale
+
+  // Tabs : poules / phase finale
   const tabNav = el('div', { class: 'tabs' },
     el('button', { class: 'tab' + (activeScheduleTab === 'poules' ? ' active' : ''),
-      'data-schedule-tab': 'poules', onclick: (e) => { activeScheduleTab = 'poules'; renderScheduleSection(); }
-    }, `Poules (${t.matches.length})`),
+      onclick: () => { activeScheduleTab = 'poules'; renderScheduleTab(); }
+    }, `📋 Poules (${t.matches.length})`),
     el('button', { class: 'tab' + (activeScheduleTab === 'knockout' ? ' active' : ''),
-      'data-schedule-tab': 'knockout', onclick: (e) => { activeScheduleTab = 'knockout'; renderScheduleSection(); }
-    }, `Phase finale (${t.bracketMatches?.length || 0})`));
+      onclick: () => { activeScheduleTab = 'knockout'; renderScheduleTab(); }
+    }, `🏆 Phase finale (${t.bracketMatches?.length || 0})`));
   container.appendChild(tabNav);
 
-  // Source des matchs
   const sourceMatches = activeScheduleTab === 'poules' ? t.matches : (t.bracketMatches || []);
   const alreadyScheduled = t.schedule.filter((s) => sourceMatches.some((m) => m.id === s.matchId));
 
   if (!sourceMatches.length) {
     container.appendChild(el('div', { class: 'empty-state' },
-      el('p', {}, activeScheduleTab === 'poules' ? 'Pas de matchs de poule.' : 'Lance d\'abord la phase finale (section 3).')));
+      el('p', {}, 'Pas de matchs dans cette catégorie.')));
     return;
   }
 
-  // Tableau du planning
   if (alreadyScheduled.length) {
-    container.appendChild(el('h3', {}, `Planning ${activeScheduleTab === 'poules' ? 'des poules' : 'de la phase finale'}`));
     container.appendChild(renderScheduleTable(alreadyScheduled, sourceMatches, t));
-    // Conflits
+    container.appendChild(el('p', { class: 'schedule-edit-hint' },
+      '💡 Clique sur un créneau pour modifier son heure ou son terrain.'));
     const conflicts = detectScheduleConflicts(alreadyScheduled, sourceMatches, t.teams);
     if (conflicts.length) {
       container.appendChild(el('div', { class: 'alert alert-warn', style: { marginTop: '12px' } },
-        el('strong', {}, '⚠ ' + conflicts.length + ' conflit(s) détecté(s)'),
+        el('strong', {}, '⚠ ' + conflicts.length + ' conflit(s)'),
         el('ul', { style: { marginTop: '8px' } },
           ...conflicts.map((c) => el('li', {}, `${c.team} — ${c.reason}`))
         )));
     }
   } else {
     container.appendChild(el('div', { class: 'empty-state' },
-      el('p', {}, 'Aucun planning généré pour cette catégorie.')));
+      el('p', {}, 'Aucun planning généré pour cette catégorie. Clique sur "Générer le planning" ci-dessus.')));
   }
 }
 
 function renderScheduleTable(schedule, matches, t) {
-  const table = el('table', { class: 'standings-table', style: { fontSize: '0.95rem' } });
+  const table = el('table', { class: 'schedule-table' });
   table.appendChild(el('thead', {}, el('tr', {},
     el('th', {}, 'Date'),
     el('th', {}, 'Heure'),
     el('th', {}, 'Terrain'),
     el('th', {}, 'Match'),
     el('th', {}, 'Score'),
-    el('th', {}, ''),
   )));
   const tb = el('tbody');
-  // Index par id
   const matchById = new Map(matches.map((m) => [m.id, m]));
   const sorted = [...schedule].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
   sorted.forEach((s) => {
@@ -840,13 +925,15 @@ function renderScheduleTable(schedule, matches, t) {
     if (!m) return;
     const tA = t.teams.find((x) => x.id === m.teamA);
     const tB = t.teams.find((x) => x.id === m.teamB);
-    const tr = el('tr', {});
+    const tr = el('tr', {
+      class: 'editable',
+      title: 'Cliquer pour modifier',
+      onclick: () => openScheduleEditModal(s),
+    });
     tr.appendChild(el('td', {}, s.date));
     tr.appendChild(el('td', { style: { fontWeight: 600 } }, s.time));
-    tr.appendChild(el('td', { class: 'text-center' }, '🟢 T' + s.terrain));
-    tr.appendChild(el('td', {},
-      (tA?.name || '?') + ' vs ' + (tB?.name || '?')
-    ));
+    tr.appendChild(el('td', {}, el('span', { class: 'terrain-badge' }, '🟢 T' + s.terrain)));
+    tr.appendChild(el('td', {}, (tA?.name || '?') + ' vs ' + (tB?.name || '?')));
     tr.appendChild(el('td', { class: 'text-center', style: { fontWeight: 600 } },
       (m.scoreA != null ? m.scoreA : '-') + ' - ' + (m.scoreB != null ? m.scoreB : '-')));
     tb.appendChild(tr);
@@ -863,7 +950,6 @@ function generateScheduleForCurrent() {
   if (!sourceMatches.length) { toast('Aucun match à planifier.', 'warn'); return; }
   const newSched = generateSchedule(sourceMatches, t.config);
   store.setCurrent((s) => {
-    // On remplace uniquement les créneaux de cette catégorie
     const sourceIds = new Set(sourceMatches.map((m) => m.id));
     s.schedule = s.schedule.filter((sc) => !sourceIds.has(sc.matchId));
     s.schedule.push(...newSched);
@@ -873,6 +959,7 @@ function generateScheduleForCurrent() {
     });
   });
   toast(`Planning généré : ${newSched.length} matchs.`, 'success');
+  renderScheduleTab();
 }
 
 async function exportScheduleAsImage() {
@@ -888,16 +975,51 @@ async function exportScheduleAsImage() {
   }
 }
 
+// ---- Modal d'édition d'un créneau ----
+function openScheduleEditModal(slot) {
+  editingSlot = slot;
+  $('#se-date').value = slot.date;
+  $('#se-time').value = slot.time;
+  $('#se-terrain').value = slot.terrain;
+  $('#se-error').innerHTML = '';
+  $('#schedule-edit-modal').classList.add('show');
+}
+function closeScheduleEditModal() {
+  $('#schedule-edit-modal').classList.remove('show');
+  editingSlot = null;
+}
+function saveScheduleEditModal() {
+  if (!editingSlot) return;
+  const date = $('#se-date').value;
+  const time = $('#se-time').value;
+  const terrain = parseInt($('#se-terrain').value, 10);
+  const err = $('#se-error');
+  err.innerHTML = '';
+  if (!date || !time) { err.innerHTML = '<div class="alert alert-danger" style="margin-top:8px;">Date et heure requises.</div>'; return; }
+  if (isNaN(terrain) || terrain < 1) { err.innerHTML = '<div class="alert alert-danger" style="margin-top:8px;">Terrain invalide.</div>'; return; }
+  store.setCurrent((s) => {
+    const sc = s.schedule.find((x) => x.matchId === editingSlot.matchId);
+    if (sc) {
+      sc.date = date; sc.time = time; sc.terrain = terrain;
+      s.history.push({ at: new Date().toISOString(), type: 'schedule-edited',
+        label: `Créneau modifié : ${date} ${time} T${terrain}` });
+    }
+  });
+  closeScheduleEditModal();
+  toast('Créneau modifié.', 'success');
+  renderScheduleTab();
+}
+
 // ================================================================
 // HISTORIQUE
 // ================================================================
-function renderHistorySection() {
-  const t = store.currentTournament();
+function renderHistoryTab() {
   const list = $('#history-list');
   if (!list) return;
   clear(list);
+  const t = store.currentTournament();
   if (!t) return;
-  const items = [...(t.history || [])].reverse().slice(0, 50);
+  const items = [...(t.history || [])].reverse().slice(0, 100);
   if (!items.length) {
     list.appendChild(el('p', { class: 'muted text-center' }, 'Aucun événement pour l\'instant.'));
     return;
@@ -905,7 +1027,7 @@ function renderHistorySection() {
   const typeIcons = {
     'team-add': '➕', 'team-remove': '➖', 'teams-clear': '🧹',
     'poules-draw': '🎲', 'brackets-launched': '🚀',
-    'match-finished': '⚽', 'schedule-generated': '📅',
+    'match-finished': '⚽', 'schedule-generated': '📅', 'schedule-edited': '✏️',
   };
   items.forEach((h) => {
     const d = new Date(h.at);
@@ -920,8 +1042,11 @@ function renderHistorySection() {
 }
 
 // ================================================================
-// EXPORT IMAGE
+// EXPORT
 // ================================================================
+function renderExportTab() {
+  // Pas de rendu spécifique, juste laisser les inputs visibles
+}
 async function handleExportImage() {
   const mode = $('#export-select')?.value;
   const format = $('#export-format')?.value;

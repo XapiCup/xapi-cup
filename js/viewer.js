@@ -137,6 +137,7 @@ function renderSchedule(t) {
   if (!container) return;
   clear(container);
   if (!t || !t.schedule?.length) return;
+  if (t.config?.schedulePublic === false) return; // admin a cache le planning
   container.appendChild(el('h3', { style: { marginTop: '20px' } }, '📅 Planning'));
   // Group par date
   const byDate = {};
