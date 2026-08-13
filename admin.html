@@ -54,20 +54,29 @@
         </div>
         <div class="dashboard-actions">
           <button class="btn btn-primary btn-lg" id="dashboard-new-btn">+ Nouveau tournoi</button>
+          <button class="btn btn-ghost" id="dashboard-planning-btn" style="background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border);">📅 Planning global</button>
           <a class="btn btn-ghost" href="viewer.html" target="_blank" style="background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border);">👀 Voir côté public</a>
         </div>
       </div>
 
       <div class="dashboard-stats" id="dashboard-stats"></div>
 
+      <!-- Sync cross-browser : Export / Import JSON global -->
+      <div class="admin-section" style="margin-top: 16px; padding: 12px 16px; background: var(--color-surface-2); border-radius: 8px; border: 1px solid var(--color-border);">
+        <h3 style="margin: 0 0 8px 0; font-size: 1rem;">🔄 Synchronisation cross-browser</h3>
+        <p class="section-help" style="margin: 0 0 10px 0;">Tu changes de navigateur ou de device ? Exporte tes données ici puis importe-les sur l'autre navigateur.</p>
+        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+          <button class="btn btn-ghost" id="dashboard-export-json-btn" style="background: var(--color-primary); color: #fff; border-color: var(--color-primary);">📤 Exporter toutes mes données</button>
+          <label class="btn btn-ghost" for="dashboard-import-json-input" style="background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); cursor: pointer;">📥 Importer des données</label>
+          <input type="file" id="dashboard-import-json-input" accept=".json,application/json" style="display:none" />
+        </div>
+      </div>
+
       <h2 class="dashboard-section-title">Tournois actifs</h2>
       <div class="tournament-cards" id="tournament-cards"></div>
 
       <h2 class="dashboard-section-title mt-3" id="archived-section-title" style="display:none;">📦 Archivés</h2>
       <div class="tournament-cards" id="tournament-cards-archived"></div>
-      <div class="dashboard-footer-actions mt-3" style="display: flex; gap: 12px; justify-content: center;">
-        <button class="btn btn-ghost" id="dashboard-planning-btn" style="background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border);">📅 Planning global</button>
-      </div>
     </section>
 
     <!-- ============================================================
@@ -142,9 +151,11 @@
 
         <div class="admin-section">
           <h2>Grille planning</h2>
-          <p class="section-help">Glisse-dépose les matchs entre les terrains et les jours. Un match déposé sur un créneau occupé retourne dans la sidebar.</p>
-          <div id="planning-grid"></div>
-          <div id="planning-sidebar"></div>
+          <p class="section-help">Glisse-dépose les matchs depuis la sidebar vers les créneaux. Un match déposé sur un créneau occupé retourne dans la sidebar.</p>
+          <div class="planning-grid-wrapper">
+            <div id="planning-sidebar" class="planning-sidebar"></div>
+            <div id="planning-grid" class="planning-grid"></div>
+          </div>
         </div>
       </div>
     </section>
@@ -398,6 +409,30 @@ Athletic U13
       <div id="goals-modal-body"></div>
       <div class="modal-actions">
         <button class="btn btn-ghost" id="goals-modal-close" style="background: var(--color-surface-2); color: var(--color-text);">Fermer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal : définir les dates d'un tournoi -->
+  <div class="modal-backdrop" id="date-modal">
+    <div class="modal">
+      <h3>📅 Dates du tournoi</h3>
+      <div id="date-modal-tournament-name" style="font-weight: 600; margin-bottom: 12px;"></div>
+      <div class="form-group">
+        <label for="date-start-input">Date de début</label>
+        <input type="date" id="date-start-input" class="input" />
+      </div>
+      <div class="form-group">
+        <label for="date-end-input">Date de fin (optionnel, si multi-jours)</label>
+        <input type="date" id="date-end-input" class="input" />
+      </div>
+      <div class="form-group">
+        <label for="date-location-input">Lieu (optionnel)</label>
+        <input type="text" id="date-location-input" class="input" placeholder="Ex: Stade d'Hasparren" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="date-cancel" style="background: var(--color-surface-2); color: var(--color-text);">Annuler</button>
+        <button class="btn btn-success" id="date-save">Valider</button>
       </div>
     </div>
   </div>
