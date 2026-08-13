@@ -1800,7 +1800,6 @@ a:hover { text-decoration: underline; }
   overflow: auto;
   min-height: 400px;
   max-height: 75vh;
-  position: relative;
 }
 .planning-grid-header {
   background: var(--color-surface-2);
@@ -1842,11 +1841,8 @@ a:hover { text-decoration: underline; }
   margin: 1px 0;
   border-left: 4px solid var(--color-accent);
   user-select: none;
+  position: relative;
   line-height: 1.2;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
 }
 .planning-match:active { cursor: grabbing; }
 .planning-match.bracket-placeholder {
