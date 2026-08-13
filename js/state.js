@@ -134,7 +134,14 @@ class Store {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        return { ...structuredClone(DEFAULT_STATE), ...parsed };
+        // Merge défensif: s'assurer que tournaments existe toujours
+        const merged = { ...structuredClone(DEFAULT_STATE), ...parsed };
+        if (!merged.tournaments || !Array.isArray(merged.tournaments)) {
+          console.warn('State: tournaments manquants ou invalides, reset à []');
+          merged.tournaments = [];
+        }
+        if (!merged.planning) merged.planning = structuredClone(DEFAULT_STATE.planning);
+        return merged;
       }
       // Essayer de migrer depuis l'ancien format
       const old = localStorage.getItem('xapi-cup-state-v1');
