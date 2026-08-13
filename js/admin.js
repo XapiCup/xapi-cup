@@ -46,12 +46,24 @@ onReady(() => {
   updateSessionTimer();
   setInterval(updateSessionTimer, 60_000);
 
-  bindUI();
-  bindLogoutButton();
-  bindPasswordChange();
-  bindDashboardUI();
-  bindDateModal();
-  bindExportImport();
+  try {
+    bindUI();
+    bindLogoutButton();
+    bindPasswordChange();
+    bindDashboardUI();
+    bindDateModal();
+    bindExportImport();
+  } catch (e) {
+    console.error('Erreur init admin:', e);
+    document.getElementById('admin-content').innerHTML = `
+      <div class="container" style="padding: 40px; text-align: center;">
+        <h2>⚠️ Erreur de chargement</h2>
+        <p>Une erreur est survenue: ${e.message}</p>
+        <p>Fais <strong>Ctrl+Shift+R</strong> pour recharger la page (vide le cache).</p>
+        <p>Si le problème persiste, clique sur "Déconnexion" puis reconnecte-toi.</p>
+      </div>`;
+    return;
+  }
 
   store.subscribe(() => {
     // Si le tournoi courant a été supprimé et qu'on était sur sa vue, retour dashboard
