@@ -65,6 +65,88 @@
 
       <h2 class="dashboard-section-title mt-3" id="archived-section-title" style="display:none;">📦 Archivés</h2>
       <div class="tournament-cards" id="tournament-cards-archived"></div>
+      <div class="dashboard-footer-actions mt-3" style="display: flex; gap: 12px; justify-content: center;">
+        <button class="btn btn-ghost" id="dashboard-planning-btn" style="background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border);">📅 Planning global</button>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         VUE PLANNING GLOBAL (multi-tournois)
+         ============================================================ -->
+    <section id="view-planning" class="admin-planning-view" style="display:none;">
+      <div class="container">
+        <button class="btn btn-sm btn-ghost" id="back-to-dashboard-from-planning" style="background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); margin-bottom: 12px;">
+          ← Tous mes tournois
+        </button>
+        <div class="admin-section">
+          <h1>📅 Planning global</h1>
+          <p class="section-help">Crée un planning multi-tournois : sélectionne les tournois, configure les terrains et horaires, génère automatiquement, puis ajuste en drag &amp; drop.</p>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>Tournois à inclure</label>
+              <div id="planning-tournaments-list" class="planning-tournaments-list"></div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="plan-terrains">Nombre de terrains</label>
+              <input type="number" id="plan-terrains" min="1" max="10" value="2" class="input" />
+            </div>
+            <div class="form-group">
+              <label for="plan-start-time">Heure de début</label>
+              <input type="time" id="plan-start-time" value="09:00" class="input" />
+            </div>
+            <div class="form-group">
+              <label for="plan-match-duration">Durée d'un match (min)</label>
+              <input type="number" id="plan-match-duration" min="5" max="240" value="20" class="input" />
+            </div>
+            <div class="form-group">
+              <label for="plan-break-duration">Pause entre matchs (min)</label>
+              <input type="number" id="plan-break-duration" min="0" max="60" value="5" class="input" />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="checkbox-group">
+                <input type="checkbox" id="plan-lunch-enabled" />
+                <span>Inclure une pause déjeuner</span>
+              </label>
+            </div>
+            <div class="form-group">
+              <label for="plan-lunch-start">Heure de début déjeuner</label>
+              <input type="time" id="plan-lunch-start" value="12:00" class="input" />
+            </div>
+            <div class="form-group">
+              <label for="plan-lunch-duration">Durée déjeuner (min)</label>
+              <input type="number" id="plan-lunch-duration" min="15" max="240" value="60" class="input" />
+            </div>
+          </div>
+
+          <div class="flex-between mt-3">
+            <div class="planning-actions">
+              <button class="btn btn-primary" id="plan-generate-btn">⚡ Générer le planning</button>
+              <button class="btn btn-ghost" id="plan-add-break-btn" style="background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border);">🍽️ Ajouter une pause</button>
+              <button class="btn btn-ghost" id="plan-reset-btn" style="background: var(--color-surface); color: var(--color-accent); border: 1px solid var(--color-accent);">🗑️ Vider le planning</button>
+            </div>
+            <div class="planning-visibility">
+              <label class="checkbox-group">
+                <input type="checkbox" id="plan-visible-toggle" />
+                <span>👁️ Visible par le public</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="admin-section">
+          <h2>Grille planning</h2>
+          <p class="section-help">Glisse-dépose les matchs entre les terrains et les jours. Un match déposé sur un créneau occupé retourne dans la sidebar.</p>
+          <div id="planning-grid"></div>
+          <div id="planning-sidebar"></div>
+        </div>
+      </div>
     </section>
 
     <!-- ============================================================

@@ -46,10 +46,16 @@ const DEFAULT_TOURNAMENT = () => ({
 });
 
 const DEFAULT_STATE = {
-  version: 5,
+  version: 6,
   tournaments: [],
   currentTournamentId: null,
   meta: { updatedAt: null },
+  planning: {
+    visible: false,
+    config: { terrains: 2, startTime: '09:00', matchDuration: 20, breakDuration: 5, days: [] },
+    matches: [],
+    breaks: [],
+  },
 };
 
 class Store {
@@ -99,6 +105,25 @@ class Store {
         });
       });
       this.state.version = 5;
+      this._save();
+    }
+    // Migration v5 -> v6 : planning global multi-tournois
+    if (this.state.version < 6) {
+      if (!this.state.planning) {
+        this.state.planning = {
+          visible: false,
+          config: {
+            terrains: 2,
+            startTime: '09:00',
+            matchDuration: 20,
+            breakDuration: 5,
+            days: [],
+          },
+          matches: [],
+          breaks: [],
+        };
+      }
+      this.state.version = 6;
       this._save();
     }
   }
@@ -612,6 +637,205 @@ class Store {
       return false;
     }
   }
+
+  // ========== PLANNING GLOBAL ==========
+  setPlanningConfig(cfg) {
+    this.state.planning.config = { ...this.state.planning.config, ...cfg };
+    this._save(); this._notify();
+  }
+
+  setPlanningVisible(visible) {
+    this.state.planning.visible = !!visible;
+    this._save(); this._notify();
+  }
+
+  resetPlanning() {
+    this.state.planning.matches = [];
+    this.state.planning.breaks = [];
+    this._save(); this._notify();
+  }
+
+  addPlanningItems(items) {
+    const created = [];
+    const p = this.state.planning;
+    items.forEach((it) => {
+      const item = { id: 'pi_' + Math.random().toString(36).slice(2, 10), ...it };
+      p.matches.push(item);
+      created.push(item.id);
+    });
+    this._save(); this._notify();
+    return created;
+  }
+
+  movePlanningItem(itemId, target) {
+    let collision = null;
+    const p = this.state.planning;
+    const item = p.matches.find((m) => m.id === itemId);
+    if (!item) return null;
+    const others = p.matches.filter((m) => m.id !== itemId);
+    const conflict = others.find((m) => {
+      if (m.day !== target.day || m.terrain !== target.terrain) return false;
+      const aStart = m.startMin, aEnd = m.startMin + m.durationMin;
+      const bStart = target.startMin, bEnd = target.startMin + (target.durationMin || item.durationMin);
+      return aStart < bEnd && bStart < aEnd;
+    });
+    if (conflict) return conflict;
+    item.day = target.day;
+    item.terrain = target.terrain;
+    item.startMin = target.startMin;
+    item.durationMin = target.durationMin || item.durationMin;
+    this._save(); this._notify();
+    return collision;
+  }
+
+  unplacePlanningItem(itemId) {
+    const p = this.state.planning;
+    const item = p.matches.find((m) => m.id === itemId);
+    if (!item) return;
+    item.day = null;
+    item.terrain = null;
+    item.startMin = null;
+    this._save(); this._notify();
+  }
+
+  removePlanningItem(itemId) {
+    const p = this.state.planning;
+    p.matches = p.matches.filter((m) => m.id !== itemId);
+    p.breaks = p.breaks.filter((b) => b.id !== itemId);
+    this._save(); this._notify();
+  }
+
+  addPlanningBreak(breakItem) {
+    this.state.planning.breaks.push({
+      id: 'br_' + Math.random().toString(36).slice(2, 10),
+      kind: 'lunch',
+      ...breakItem,
+    });
+    this._save(); this._notify();
+  }
+
+  generatePlanning(tournamentIds, config) {
+    this.setPlanningConfig(config);
+    const cfg = this.state.planning.config;
+    const tournaments = this.state.tournaments.filter((t) => tournamentIds.includes(t.id) && !t.archived);
+    if (!tournaments.length) return { added: 0, days: [] };
+
+    const daysSet = new Set();
+    tournaments.forEach((t) => {
+      if (t.date) daysSet.add(t.date);
+      if (t.endDate && t.endDate !== t.date) {
+        const d = new Date(t.date);
+        const end = new Date(t.endDate);
+        for (let cur = new Date(d); cur <= end; cur.setDate(cur.getDate() + 1)) {
+          daysSet.add(cur.toISOString().slice(0, 10));
+        }
+      }
+    });
+    const days = Array.from(daysSet).sort();
+    this.setPlanningConfig({ days });
+
+    const allItems = [];
+    const dayNext = new Map();
+    days.forEach((d) => dayNext.set(d, parseTimeToMin(cfg.startTime)));
+
+    tournaments.forEach((t) => {
+      const matchList = [];
+      if (t.phase === 'poules' || t.phase === 'knockout') {
+        (t.matches || []).forEach((m) => {
+          matchList.push({
+            sourceId: m.id, tournamentId: t.id, kind: 'poule',
+            label: labelForPouleMatch(t, m),
+          });
+        });
+      }
+      if (t.phase === 'knockout' && t.brackets?.gold) {
+        const gold = t.brackets.gold;
+        const rounds = gold.rounds || [];
+        const totalRounds = rounds.length;
+        rounds.forEach((round, rIdx) => {
+          const fromEnd = totalRounds - rIdx;
+          const roundLabel = (fromEnd === 4) ? '8e de finale'
+                           : (fromEnd === 3) ? 'Quart de finale'
+                           : (fromEnd === 2) ? 'Demi-finale'
+                           : 'Finale';
+          round.forEach((m) => {
+            matchList.push({
+              sourceId: m.id, tournamentId: t.id, kind: 'bracket-placeholder',
+              label: `${roundLabel} - ${t.name}`,
+            });
+          });
+        });
+        if (t.brackets.silver) {
+          const silver = t.brackets.silver;
+          const rounds = silver.rounds || [];
+          const totalRounds = rounds.length;
+          rounds.forEach((round, rIdx) => {
+            const fromEnd = totalRounds - rIdx;
+            const roundLabel = (fromEnd === 2) ? 'Demi-finale Consolante'
+                             : 'Finale Consolante';
+            round.forEach((m) => {
+              matchList.push({
+                sourceId: m.id, tournamentId: t.id, kind: 'bracket-placeholder',
+                label: `${roundLabel} - ${t.name}`,
+              });
+            });
+          });
+          if (t.brackets.thirdPlace) {
+            matchList.push({
+              sourceId: t.brackets.thirdPlace.id, tournamentId: t.id, kind: 'bracket-placeholder',
+              label: `Petite finale - ${t.name}`,
+            });
+          }
+        }
+      }
+
+      matchList.forEach((m, idx) => {
+        const day = days.length === 1 ? days[0] : days[idx % days.length];
+        const terrain = (idx % cfg.terrains) + 1;
+        const startMin = dayNext.get(day) || parseTimeToMin(cfg.startTime);
+        allItems.push({
+          ...m,
+          day,
+          terrain,
+          startMin,
+          durationMin: cfg.matchDuration,
+        });
+        dayNext.set(day, startMin + cfg.matchDuration + cfg.breakDuration);
+      });
+    });
+
+    this.resetPlanning();
+    this.addPlanningItems(allItems);
+
+    if (config.lunchBreak && config.lunchBreak.startTime) {
+      const lunchStart = parseTimeToMin(config.lunchBreak.startTime);
+      const lunchDur = config.lunchBreak.durationMin || 60;
+      this.state.planning.matches
+        .filter((m) => m.startMin >= lunchStart)
+        .forEach((m) => { m.startMin += lunchDur; });
+      this._save(); this._notify();
+      days.forEach((d) => {
+        this.addPlanningBreak({
+          day: d, terrain: 1, startMin: lunchStart, durationMin: lunchDur, kind: 'lunch',
+        });
+      });
+    }
+
+    return { added: allItems.length, days };
+  }
+}
+
+function parseTimeToMin(t) {
+  if (!t) return 540;
+  const [h, m] = t.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+function labelForPouleMatch(t, m) {
+  const tA = t.teams.find((x) => x.id === m.teamA);
+  const tB = t.teams.find((x) => x.id === m.teamB);
+  const pouleLabel = String.fromCharCode(65 + (m.pouleIdx || 0));
+  return `${t.name} - Poule ${pouleLabel}: ${tA?.name || '?'} vs ${tB?.name || '?'}`;
 }
 
 // ---------- History entry ----------
