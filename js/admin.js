@@ -46,24 +46,12 @@ onReady(() => {
   updateSessionTimer();
   setInterval(updateSessionTimer, 60_000);
 
-  try {
-    bindUI();
-    bindLogoutButton();
-    bindPasswordChange();
-    bindDashboardUI();
-    bindDateModal();
-    bindExportImport();
-  } catch (e) {
-    console.error('Erreur init admin:', e);
-    document.getElementById('admin-content').innerHTML = `
-      <div class="container" style="padding: 40px; text-align: center;">
-        <h2>⚠️ Erreur de chargement</h2>
-        <p>Une erreur est survenue: ${e.message}</p>
-        <p>Fais <strong>Ctrl+Shift+R</strong> pour recharger la page (vide le cache).</p>
-        <p>Si le problème persiste, clique sur "Déconnexion" puis reconnecte-toi.</p>
-      </div>`;
-    return;
-  }
+  bindUI();
+  bindLogoutButton();
+  bindPasswordChange();
+  bindDashboardUI();
+  bindDateModal();
+  bindExportImport();
 
   store.subscribe(() => {
     // Si le tournoi courant a été supprimé et qu'on était sur sa vue, retour dashboard
@@ -1447,19 +1435,16 @@ function renderPlanningGrid() {
   const allEnd = p.matches.map((m) => (m.startMin || 0) + m.durationMin);
   const minStart = allStart.length ? Math.min(...allStart) : parseTimeToMin(cfg.startTime);
   const maxEnd = allStart.length ? Math.max(...allEnd) : minStart + 240;
-  const STEP = 10; // 10 min per row
-  const ROW_PX = 28; // hauteur d'une ligne en px
-  const startHour = Math.floor(minStart / 60);
-  const endHour = Math.ceil(maxEnd / 60) + 1;
-  const totalRows = (endHour - startHour) * (60 / STEP);
+  const STEP = 10; // pas de 10 minutes
+  const startMin = Math.floor(minStart / STEP) * STEP;
+  const endMin = Math.ceil(maxEnd / STEP) * STEP + STEP;
+  const totalRows = Math.round((endMin - startMin) / STEP);
   const totalCols = 1 + (terrains * days.length);
 
-  // Conteneur principal : grille CSS pour les cellules + couche absolute pour les matchs
-  grid.style.gridTemplateColumns = `70px repeat(${terrains * days.length}, 1fr)`;
-  grid.style.gridAutoRows = `${ROW_PX}px`;
-  grid.style.position = 'relative';
+  grid.style.gridTemplateColumns = `70px repeat(${terrains * days.length}, minmax(120px, 1fr))`;
+  grid.style.gridAutoRows = '32px';
 
-  // En-têtes
+  // En-têtes (ligne 1)
   grid.appendChild(el('div', { class: 'planning-grid-header' }, 'Heure'));
   days.forEach((d) => {
     for (let t = 1; t <= terrains; t++) {
@@ -1469,12 +1454,12 @@ function renderPlanningGrid() {
     }
   });
 
-  // Lignes : heure + cellules
+  // Cellules (une ligne par pas de 10 min)
   for (let row = 0; row < totalRows; row++) {
-    const mins = (startHour * 60) + (row * STEP);
-    // Colonne heure
-    const timeCell = el('div', { class: 'planning-grid-time' }, (mins % 60 === 0) ? formatMinToTime(mins) : '');
-    grid.appendChild(timeCell);
+    const mins = startMin + (row * STEP);
+    // Colonne heure (affichée seulement sur les heures pleines)
+    grid.appendChild(el('div', { class: 'planning-grid-time' },
+      (mins % 60 === 0) ? formatMinToTime(mins) : ''));
 
     days.forEach((d) => {
       for (let t = 1; t <= terrains; t++) {
@@ -1515,38 +1500,19 @@ function renderPlanningGrid() {
     });
   }
 
-  // Couche overlay pour les matchs placés (position: absolute par-dessus la grille)
-  const overlay = el('div', { class: 'planning-overlay' });
-  overlay.style.position = 'absolute';
-  overlay.style.top = '0';
-  overlay.style.left = '0';
-  overlay.style.right = '0';
-  overlay.style.bottom = '0';
-  overlay.style.pointerEvents = 'none'; // laisse les cellules recevoir les events
-  grid.appendChild(overlay);
-
-  // Matchs placés
+  // Matchs placés (positionnés par gridColumn/gridRow, alignés sur le pas de 10 min)
   p.matches.forEach((m) => {
     if (m.day == null || m.terrain == null || m.startMin == null) return;
     const terrainIdx = m.terrain - 1;
     const dayIdx = days.indexOf(m.day);
     if (terrainIdx < 0 || dayIdx < 0) return;
-    // Colonne 0 = heure, puis terrains
-    const col = 1 + (dayIdx * terrains) + terrainIdx;
-    const startRow = Math.round((m.startMin - startHour * 60) / STEP);
-    const rowSpan = Math.max(1, Math.ceil(m.durationMin / STEP));
+    const col = 1 + (dayIdx * terrains) + terrainIdx; // 0-indexed (0 = heure)
+    const rowOffset = Math.round((m.startMin - startMin) / STEP);
+    const rowSpan = Math.max(1, Math.round(m.durationMin / STEP));
     const matchEl = buildPlanningMatchEl(m);
-    matchEl.style.pointerEvents = 'auto'; // re-active pour drag
-    matchEl.style.position = 'absolute';
-    // Calcul position approximatif via pourcentages
-    const colPct = (col / totalCols) * 100;
-    const colWidth = 100 / totalCols;
-    const topPx = (startRow + 1) * ROW_PX; // +1 pour l'en-tête
-    matchEl.style.left = `calc(${colPct}% + 2px)`;
-    matchEl.style.width = `calc(${colWidth}% - 4px)`;
-    matchEl.style.top = `${topPx}px`;
-    matchEl.style.height = `${rowSpan * ROW_PX - 2}px`;
-    overlay.appendChild(matchEl);
+    matchEl.style.gridColumn = `${col + 1} / span 1`;  // +1 car grid est 1-indexed
+    matchEl.style.gridRow = `${rowOffset + 2} / span ${rowSpan}`;  // +2 (ligne 1 = header)
+    grid.appendChild(matchEl);
   });
 
   // Pauses
@@ -1555,27 +1521,20 @@ function renderPlanningGrid() {
     const dayIdx = days.indexOf(b.day);
     if (terrainIdx < 0 || dayIdx < 0) return;
     const col = 1 + (dayIdx * terrains) + terrainIdx;
-    const startRow = Math.round((b.startMin - startHour * 60) / STEP);
-    const rowSpan = Math.ceil(b.durationMin / STEP);
-    const colPct = (col / totalCols) * 100;
-    const colWidth = 100 / totalCols;
-    const topPx = (startRow + 1) * ROW_PX;
+    const rowOffset = Math.round((b.startMin - startMin) / STEP);
+    const rowSpan = Math.max(1, Math.round(b.durationMin / STEP));
     const breakEl = el('div', { class: 'planning-break', draggable: 'true' },
       '🍽️ Pause', el('span', { class: 'muted', style: { fontSize: '0.7rem', marginLeft: 'auto' } }, formatMinToTime(b.startMin)),
       el('button', { class: 'match-remove', onclick: (e) => { e.stopPropagation(); store.removePlanningItem(b.id); renderPlanning(); } }, 'x')
     );
-    breakEl.style.pointerEvents = 'auto';
-    breakEl.style.position = 'absolute';
-    breakEl.style.left = `calc(${colPct}% + 2px)`;
-    breakEl.style.width = `calc(${colWidth}% - 4px)`;
-    breakEl.style.top = `${topPx}px`;
-    breakEl.style.height = `${rowSpan * ROW_PX - 2}px`;
+    breakEl.style.gridColumn = `${col + 1} / span 1`;
+    breakEl.style.gridRow = `${rowOffset + 2} / span ${rowSpan}`;
     breakEl.addEventListener('dragstart', (e) => {
       planningDragData = { itemId: b.id, isBreak: true };
       e.dataTransfer.setData('text/plain', b.id);
       e.dataTransfer.effectAllowed = 'move';
     });
-    overlay.appendChild(breakEl);
+    grid.appendChild(breakEl);
   });
 }
 
@@ -1599,26 +1558,6 @@ function buildPlanningMatchEl(m) {
     matchEl.classList.add('dragging');
   });
   matchEl.addEventListener('dragend', () => matchEl.classList.remove('dragging'));
-  // Permettre de drop sur un match placé pour échanger
-  matchEl.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); matchEl.style.outline = '2px dashed var(--color-accent)'; });
-  matchEl.addEventListener('dragleave', () => { matchEl.style.outline = ''; });
-  matchEl.addEventListener('drop', (e) => {
-    e.preventDefault(); e.stopPropagation();
-    matchEl.style.outline = '';
-    if (!planningDragData || planningDragData.itemId === m.id) return;
-    // Échanger les positions
-    const target = { day: m.day, terrain: m.terrain, startMin: m.startMin, durationMin: m.durationMin };
-    const collision = store.movePlanningItem(planningDragData.itemId, target);
-    if (collision) {
-      // Si collision, on déplace le match existant vers la sidebar et on place le nouveau
-      store.unplacePlanningItem(m.id);
-      store.movePlanningItem(planningDragData.itemId, target);
-      toast('Match échangé.');
-    } else {
-      toast('Match déplacé.');
-    }
-    renderPlanning();
-  });
   return matchEl;
 }
 
@@ -1627,26 +1566,16 @@ function renderPlanningSidebar() {
   if (!sidebar) return;
   clear(sidebar);
   const unplaced = store.state.planning.matches.filter((m) => m.day == null || m.terrain == null || m.startMin == null);
-  sidebar.appendChild(el('h3', {}, `📦 Matchs à positionner (${unplaced.length})`));
+  sidebar.appendChild(el('h3', {}, `📦 Matchs non positionnes (${unplaced.length})`));
   if (!unplaced.length) {
-    sidebar.appendChild(el('div', { class: 'muted', style: { padding: '8px 0' } }, 'Tous les matchs sont placés ✓'));
+    sidebar.appendChild(el('div', { class: 'muted', style: { padding: '8px 0' } }, 'Tous les matchs sont places.'));
     return;
   }
   unplaced.forEach((m) => {
     const el2 = buildPlanningMatchEl(m);
-    el2.style.position = 'relative';
-    el2.style.height = 'auto';
-    el2.style.marginBottom = '4px';
     sidebar.appendChild(el2);
   });
-}
 
-// Listeners drag&drop sur la sidebar (bind une seule fois)
-let sidebarDropBound = false;
-function bindSidebarDrop() {
-  if (sidebarDropBound) return;
-  const sidebar = $('#planning-sidebar');
-  if (!sidebar) return;
   sidebar.addEventListener('dragover', (e) => { e.preventDefault(); sidebar.style.background = 'rgba(193, 39, 45, 0.1)'; });
   sidebar.addEventListener('dragleave', () => { sidebar.style.background = ''; });
   sidebar.addEventListener('drop', (e) => {
@@ -1654,15 +1583,12 @@ function bindSidebarDrop() {
     sidebar.style.background = '';
     if (!planningDragData) return;
     store.unplacePlanningItem(planningDragData.itemId);
-    planningDragData = null;
     renderPlanning();
     toast('Match remis dans la sidebar.');
   });
-  sidebarDropBound = true;
 }
 
 function bindPlanningUI() {
-  bindSidebarDrop();
   $('#dashboard-planning-btn')?.addEventListener('click', showPlanningView);
   $('#back-to-dashboard-from-planning')?.addEventListener('click', () => {
     view = 'dashboard';
