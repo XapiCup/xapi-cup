@@ -117,6 +117,7 @@ function renderAll() {
   renderHeader(t);
   renderPoules(t);
   renderKnockout();
+  renderStats(t);
   renderHistory(t);
 }
 
@@ -232,4 +233,141 @@ function updateFeedBadge() {
     }
   }
   badge.dataset.prev = String(items.length);
+}
+
+// ============================================================
+// STATS : classement des buteurs et MVP
+// ============================================================
+function renderStats(t) {
+  const container = $('#stats-container');
+  if (!container) return;
+  clear(container);
+  if (!t) {
+    container.appendChild(el('div', { class: 'empty-state' },
+      el('div', { class: 'empty-icon' }, '🎯'),
+      el('h3', {}, 'Aucun tournoi à afficher')));
+    return;
+  }
+
+  const players = t.players || [];
+  if (!players.length) {
+    container.appendChild(el('div', { class: 'empty-state' },
+      el('div', { class: 'empty-icon' }, '⚽'),
+      el('h3', {}, 'Aucun joueur enregistré'),
+      el('p', { class: 'muted' }, 'L\'admin peut ajouter des joueurs via la page admin.')));
+    return;
+  }
+
+  // Aggregat
+  const scorerMap = new Map(); // playerId -> { playerId, goals, matches:[], teams:Set }
+  const mvpMap = new Map();    // playerId -> count
+  players.forEach((p) => scorerMap.set(p.id, { ...p, goals: 0, matches: new Set(), teams: new Set([p.teamId]) }));
+  players.forEach((p) => mvpMap.set(p.id, 0));
+
+  const countGoals = (m) => {
+    if (!m || !m.goals) return;
+    (m.goals.A || []).forEach((g) => {
+      const s = scorerMap.get(g.playerId);
+      if (s) { s.goals++; s.matches.add(m.id); }
+    });
+    (m.goals.B || []).forEach((g) => {
+      const s = scorerMap.get(g.playerId);
+      if (s) { s.goals++; s.matches.add(m.id); }
+    });
+  };
+  (t.matches || []).forEach(countGoals);
+  (t.bracketMatches || []).forEach(countGoals);
+
+  const countMvp = (m) => {
+    if (!m || !m.mvp) return;
+    if (mvpMap.has(m.mvp)) mvpMap.set(m.mvp, mvpMap.get(m.mvp) + 1);
+  };
+  (t.matches || []).forEach(countMvp);
+  (t.bracketMatches || []).forEach(countMvp);
+
+  // Top buteurs
+  const scorers = Array.from(scorerMap.values())
+    .filter((s) => s.goals > 0)
+    .sort((a, b) => b.goals - a.goals || a.number - b.number);
+  // Top MVP
+  const mvps = Array.from(mvpMap.entries())
+    .filter(([, c]) => c > 0)
+    .map(([id, count]) => ({ ...(players.find((p) => p.id === id) || {}), mvpCount: count }))
+    .sort((a, b) => b.mvpCount - a.mvpCount);
+
+  container.appendChild(el('h2', { style: { marginTop: '0' } }, `🎯 Buteurs & MVP — ${t.name}`));
+
+  const grid = el('div', { class: 'stats-grid', style: {
+    display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px',
+  } });
+
+  // === Buteurs ===
+  const scorerCard = el('div', { class: 'card' },
+    el('h3', { style: { marginTop: '0' } }, `⚽ Classement des buteurs (${scorers.length})`));
+  if (!scorers.length) {
+    scorerCard.appendChild(el('p', { class: 'muted' },
+      'Aucun buteur pour le moment. L\'admin peut marquer les buteurs sur chaque match.'));
+  } else {
+    const table = el('table', { class: 'standings-table' });
+    table.appendChild(el('thead', {}, el('tr', {},
+      el('th', { style: { width: '36px' } }, '#'),
+      el('th', { style: { textAlign: 'left' } }, 'Joueur'),
+      el('th', {}, 'Équipe'),
+      el('th', {}, 'Buts'),
+    )));
+    const tb = el('tbody');
+    scorers.forEach((s, idx) => {
+      const team = (t.teams || []).find((x) => x.id === s.teamId);
+      const tr = el('tr', { class: idx < 3 ? `rank-${idx + 1}` : '' });
+      tr.appendChild(el('td', { class: 'rank-cell' },
+        idx === 0 ? '🥇 1' : idx === 1 ? '🥈 2' : idx === 2 ? '🥉 3' : String(idx + 1)
+      ));
+      tr.appendChild(el('td', { class: 'team-cell' },
+        el('span', { class: 'player-number' }, String(s.number)),
+        el('span', { class: 'team-name' }, s.name),
+      ));
+      tr.appendChild(el('td', { class: 'muted', style: { fontSize: '0.85rem' } }, team?.name || '?'));
+      tr.appendChild(el('td', { style: { fontWeight: 700, color: 'var(--color-accent)' } }, String(s.goals)));
+      tb.appendChild(tr);
+    });
+    table.appendChild(tb);
+    scorerCard.appendChild(table);
+  }
+  grid.appendChild(scorerCard);
+
+  // === MVP ===
+  const mvpCard = el('div', { class: 'card' },
+    el('h3', { style: { marginTop: '0' } }, `⭐ Joueurs MVP (${mvps.length})`));
+  if (!mvps.length) {
+    mvpCard.appendChild(el('p', { class: 'muted' },
+      'Aucun MVP designe. L\'admin peut designer le joueur du match depuis chaque match.'));
+  } else {
+    const table = el('table', { class: 'standings-table' });
+    table.appendChild(el('thead', {}, el('tr', {},
+      el('th', { style: { width: '36px' } }, '#'),
+      el('th', { style: { textAlign: 'left' } }, 'Joueur'),
+      el('th', {}, 'Équipe'),
+      el('th', {}, 'MVP'),
+    )));
+    const tb = el('tbody');
+    mvps.forEach((m, idx) => {
+      const team = (t.teams || []).find((x) => x.id === m.teamId);
+      const tr = el('tr', { class: idx < 3 ? `rank-${idx + 1}` : '' });
+      tr.appendChild(el('td', { class: 'rank-cell' },
+        idx === 0 ? '🥇 1' : idx === 1 ? '🥈 2' : idx === 2 ? '🥉 3' : String(idx + 1)
+      ));
+      tr.appendChild(el('td', { class: 'team-cell' },
+        el('span', { class: 'player-number' }, String(m.number)),
+        el('span', { class: 'team-name' }, m.name),
+      ));
+      tr.appendChild(el('td', { class: 'muted', style: { fontSize: '0.85rem' } }, team?.name || '?'));
+      tr.appendChild(el('td', { style: { fontWeight: 700, color: 'var(--color-gold, #d4a017)' } }, `⭐ ${m.mvpCount}`));
+      tb.appendChild(tr);
+    });
+    table.appendChild(tb);
+    mvpCard.appendChild(table);
+  }
+  grid.appendChild(mvpCard);
+
+  container.appendChild(grid);
 }

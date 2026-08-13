@@ -33,6 +33,7 @@ const DEFAULT_TOURNAMENT = () => ({
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   teams: [],
+  players: [],                // [{id, teamId, number, name}] — v5
   config: { ...DEFAULT_CONFIG },
   poules: [],
   matches: [],                 // matchs de poule
@@ -45,7 +46,7 @@ const DEFAULT_TOURNAMENT = () => ({
 });
 
 const DEFAULT_STATE = {
-  version: 2,
+  version: 5,
   tournaments: [],
   currentTournamentId: null,
   meta: { updatedAt: null },
@@ -79,6 +80,25 @@ class Store {
         if (t.allowParallel === undefined) t.allowParallel = true;
       });
       this.state.version = 4;
+      this._save();
+    }
+    // Migration v4 -> v5 : joueurs (players par team) + buteurs/MVP (goals/mvp par match)
+    if (this.state.version < 5) {
+      this.state.tournaments.forEach((t) => {
+        if (!t.players) t.players = []; // joueurs indexés par team_id
+        (t.teams || []).forEach((tm) => {
+          if (tm && !tm.players) tm.players = [];
+        });
+        (t.matches || []).forEach((m) => {
+          if (!m.goals) m.goals = { A: [], B: [] }; // [{playerId, minute?}]
+          if (m.mvp === undefined) m.mvp = null;    // playerId ou null
+        });
+        (t.bracketMatches || []).forEach((m) => {
+          if (!m.goals) m.goals = { A: [], B: [] };
+          if (m.mvp === undefined) m.mvp = null;
+        });
+      });
+      this.state.version = 5;
       this._save();
     }
   }
@@ -432,6 +452,113 @@ class Store {
       const t = s.teams.find((x) => x.id === teamId);
       if (t) t.name = trimmed;
     });
+  }
+
+  // ---------- Joueurs / Buteurs / MVP ----------
+  // Le joueur est rattache a UNE equipe (teamId). Numero + nom.
+  addPlayer(teamId, number, name) {
+    const num = parseInt(number, 10);
+    const trimmed = (name || '').trim();
+    if (!Number.isFinite(num) || num < 1 || num > 99) return null;
+    if (!trimmed) return null;
+    const t = this.currentTournament();
+    if (!t) return null;
+    // Verifier que l'equipe existe + que le numero est libre dans cette equipe
+    const team = t.teams.find((x) => x.id === teamId);
+    if (!team) return null;
+    if (!t.players) t.players = [];
+    const collision = t.players.find((p) => p.teamId === teamId && p.number === num);
+    if (collision) return null;
+    const player = {
+      id: 'p_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      teamId,
+      number: num,
+      name: trimmed,
+    };
+    this.setCurrent((s) => {
+      s.players.push(player);
+      s.history.push(historyEntry('player-add', `Joueur ${num} ${player.name} ajouté`, { teamId, playerId: player.id }));
+    });
+    return player;
+  }
+
+  removePlayer(playerId) {
+    this.setCurrent((s) => {
+      const before = s.players.length;
+      s.players = s.players.filter((p) => p.id !== playerId);
+      if (s.players.length < before) {
+        // Nettoyer les goals qui referencaient ce joueur
+        (s.matches || []).forEach((m) => {
+          m.goals.A = (m.goals.A || []).filter((g) => g.playerId !== playerId);
+          m.goals.B = (m.goals.B || []).filter((g) => g.playerId !== playerId);
+          if (m.mvp === playerId) m.mvp = null;
+        });
+        (s.bracketMatches || []).forEach((m) => {
+          m.goals.A = (m.goals.A || []).filter((g) => g.playerId !== playerId);
+          m.goals.B = (m.goals.B || []).filter((g) => g.playerId !== playerId);
+          if (m.mvp === playerId) m.mvp = null;
+        });
+      }
+    });
+  }
+
+  renamePlayer(playerId, newName) {
+    const trimmed = (newName || '').trim();
+    if (!trimmed) return;
+    this.setCurrent((s) => {
+      const p = s.players.find((x) => x.id === playerId);
+      if (p) p.name = trimmed;
+    });
+  }
+
+  // Buteur d'un match (poule OU bracket) — kind: 'poule' | 'bracket'
+  // entry: {slot: 'A'|'B', playerId, minute}
+  addGoal(kind, matchId, entry) {
+    const slot = entry.slot;
+    if (slot !== 'A' && slot !== 'B') return false;
+    const t = this.currentTournament();
+    if (!t) return false;
+    const player = t.players.find((p) => p.id === entry.playerId);
+    if (!player) return false;
+    this.setCurrent((s) => {
+      const arr = (kind === 'poule') ? s.matches : s.bracketMatches;
+      const match = arr.find((x) => x.id === matchId);
+      if (!match) return;
+      if (!match.goals) match.goals = { A: [], B: [] };
+      match.goals[slot].push({ playerId: player.id, minute: entry.minute ?? null });
+      // Garder le score synchro (utilise par les classements en parallele)
+      match[`score${slot}`] = match.goals[slot].length;
+      match.finished = (match.scoreA != null && match.scoreB != null);
+      if (!s.history) s.history = [];
+      s.history.push(historyEntry('goal', `But ${player.name} (${slot})`, { matchId, kind, playerId: player.id, slot }));
+    });
+    return true;
+  }
+
+  removeGoal(kind, matchId, slot, goalIdx) {
+    this.setCurrent((s) => {
+      const arr = (kind === 'poule') ? s.matches : s.bracketMatches;
+      const m = arr.find((x) => x.id === matchId);
+      if (!m || !m.goals) return;
+      if (!m.goals[slot] || !m.goals[slot][goalIdx]) return;
+      m.goals[slot].splice(goalIdx, 1);
+      m[`score${slot}`] = m.goals[slot].length;
+      s.history.push(historyEntry('goal-remove', `But retiré`, { matchId, kind, slot, idx: goalIdx }));
+    });
+  }
+
+  setMvp(kind, matchId, playerId) {
+    let changed = false;
+    this.setCurrent((s) => {
+      const arr = (kind === 'poule') ? s.matches : s.bracketMatches;
+      const m = arr.find((x) => x.id === matchId);
+      if (!m) return;
+      m.mvp = playerId || null;
+      changed = true;
+      const p = playerId ? s.players.find((x) => x.id === playerId) : null;
+      s.history.push(historyEntry('mvp', p ? `MVP ${p.name}` : 'MVP retiré', { matchId, kind, playerId: m.mvp }));
+    });
+    return changed;
   }
 
   // ---------- Historique ----------

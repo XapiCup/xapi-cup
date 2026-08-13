@@ -8,7 +8,7 @@ import { computeStandings, getRoundLabel } from './tournament.js';
 // ============================================================
 // POULE
 // ============================================================
-export function renderPoule(pouleIdx, teams, matches, qualifiersPerPool = 2, editable = false, onMatchChange = null) {
+export function renderPoule(pouleIdx, teams, matches, qualifiersPerPool = 2, editable = false, onMatchChange = null, onGoalsClick = null) {
   const standings = computeStandings(teams, matches);
   const wrapper = el('div', { class: 'poule' });
 
@@ -92,6 +92,14 @@ export function renderPoule(pouleIdx, teams, matches, qualifiersPerPool = 2, edi
         scoreCell.appendChild(inA);
         scoreCell.appendChild(el('span', { class: 'match-vs' }, '—'));
         scoreCell.appendChild(inB);
+        // Bouton buteurs/MVP — optionnel
+        if (onGoalsClick) {
+          const goalsBtn = el('button', { class: 'match-goals-btn',
+            title: 'Saisir les buteurs et le MVP (optionnel)',
+            onclick: () => onGoalsClick(m.id, 'poule'),
+          }, '⚽ Buteurs');
+          scoreCell.appendChild(goalsBtn);
+        }
       } else {
         scoreCell.appendChild(el('span', {}, m.scoreA ?? '-'));
         scoreCell.appendChild(el('span', { class: 'match-vs' }, '—'));

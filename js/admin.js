@@ -252,6 +252,18 @@ function bindUI() {
   });
   $('#modal-save')?.addEventListener('click', saveBracketModal);
 
+  // ===== Modal joueurs =====
+  $('#player-modal-close')?.addEventListener('click', closePlayersModal);
+  $('#player-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'player-modal') closePlayersModal();
+  });
+
+  // ===== Modal buteurs/MVP =====
+  $('#goals-modal-close')?.addEventListener('click', closeGoalsModal);
+  $('#goals-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'goals-modal') closeGoalsModal();
+  });
+
   // (Modale planning supprimée)
 
 }
@@ -543,9 +555,23 @@ function renderTeamsTab() {
     return;
   }
   t.teams.forEach((tm) => {
+    const playerCount = (t.players || []).filter((p) => p.teamId === tm.id).length;
     list.appendChild(el('li', { class: 'team-item' },
       el('span', { class: 'team-color', style: { background: tm.color } }),
-      el('span', { class: 'team-name', title: tm.name }, tm.name),
+      el('span', {
+        class: 'team-name', title: tm.name + (playerCount ? ` · ${playerCount} joueur(s) enregistré(s)` : ' · cliquer pour gérer les joueurs'),
+        style: { cursor: 'pointer', flex: 1 },
+        onclick: () => openPlayersModal(tm.id),
+      },
+        tm.name,
+        el('span', { class: 'muted', style: { fontSize: '0.8em', marginLeft: '8px' } },
+          playerCount ? `(${playerCount} joueur${playerCount > 1 ? 's' : ''})` : '⚽ joueurs...'
+        )
+      ),
+      el('button', {
+        class: 'team-edit', title: 'Gérer les joueurs de cette équipe',
+        onclick: () => openPlayersModal(tm.id),
+      }, '⚽'),
       el('button', {
         class: 'team-remove', title: 'Supprimer',
         onclick: () => { if (confirm(`Retirer "${tm.name}" ?`)) store.removeTeam(tm.id); }
@@ -553,6 +579,218 @@ function renderTeamsTab() {
     ));
   });
   syncSelectsWithState();
+}
+
+// ---------- Modal : gestion des joueurs d'une equipe ----------
+let playersModalCtx = null;
+
+function openPlayersModal(teamId) {
+  const t = store.currentTournament();
+  if (!t) return;
+  const team = t.teams.find((x) => x.id === teamId);
+  if (!team) return;
+  playersModalCtx = { teamId };
+
+  $('#player-modal-title').textContent = `⚽ Joueurs — ${team.name}`;
+  const body = $('#player-modal-body');
+  if (!body) return;
+  clear(body);
+
+  body.appendChild(el('p', { class: 'help' },
+    'Ajoute les joueurs avec leur numero de maillot. Pour les buteurs/MVP, l\'admin pourra selectionner par numero.'));
+
+  // Liste des joueurs
+  const playersList = el('div', { id: 'players-list', style: { marginTop: '16px' } });
+  body.appendChild(playersList);
+
+  const renderPlayersList = () => {
+    clear(playersList);
+    const players = (t.players || []).filter((p) => p.teamId === teamId)
+      .sort((a, b) => a.number - b.number);
+    if (!players.length) {
+      playersList.appendChild(el('div', { class: 'muted', style: { padding: '12px', textAlign: 'center' } },
+        'Aucun joueur encore enregistre.'));
+    } else {
+      playersList.appendChild(el('ul', { class: 'players-roster' }));
+      const ul = playersList.querySelector('ul');
+      players.forEach((p) => {
+        const li = el('li', { class: 'player-row' },
+          el('span', { class: 'player-number' }, String(p.number)),
+          el('span', { class: 'player-name', style: { flex: 1, cursor: 'pointer' },
+            title: 'Cliquer pour renommer',
+            onclick: () => {
+              const newName = prompt('Nouveau nom du joueur :', p.name);
+              if (newName && newName.trim()) store.renamePlayer(p.id, newName.trim());
+              renderPlayersList();
+              syncSelectsWithState();
+            }
+          }, p.name),
+          el('button', { class: 'btn btn-sm btn-danger',
+            onclick: () => { if (confirm(`Retirer "${p.name}" ?`)) store.removePlayer(p.id); renderPlayersList(); syncSelectsWithState(); }
+          }, '×')
+        );
+        ul.appendChild(li);
+      });
+    }
+  };
+  renderPlayersList();
+
+  // Form d'ajout
+  const form = el('div', { class: 'player-add-form', style: { display: 'flex', gap: '8px', marginTop: '12px' } },
+    el('input', { type: 'number', min: '1', max: '99', placeholder: 'N°', id: 'pm-num', class: 'input', style: { width: '80px' } }),
+    el('input', { type: 'text', placeholder: 'Nom du joueur', id: 'pm-name', class: 'input', style: { flex: 1 } }),
+    el('button', { class: 'btn btn-primary', onclick: () => {
+      const num = $('#pm-num').value;
+      const name = $('#pm-name').value;
+      const p = store.addPlayer(teamId, num, name);
+      if (!p) { toast('Numero (1-99) ou nom invalide, ou numero deja pris.', 'warn'); return; }
+      $('#pm-num').value = ''; $('#pm-name').value = '';
+      $('#pm-num').focus();
+      renderPlayersList();
+      syncSelectsWithState();
+    } }, '➕ Ajouter')
+  );
+  body.appendChild(form);
+
+  $('#player-modal').classList.add('show');
+  setTimeout(() => $('#pm-num')?.focus(), 50);
+}
+
+function closePlayersModal() {
+  $('#player-modal')?.classList.remove('show');
+  playersModalCtx = null;
+}
+
+// ---------- Modal : buteurs + MVP d'un match ----------
+let goalsModalCtx = null;
+
+function openGoalsModal(matchId, kind, matchObj) {
+  const t = store.currentTournament();
+  if (!t) return;
+  goalsModalCtx = { matchId, kind };
+
+  // Récupère le match à jour
+  const arr = (kind === 'poule') ? t.matches : t.bracketMatches;
+  const m = arr.find((x) => x.id === matchId) || matchObj;
+  if (!m) return;
+
+  const tA = t.teams.find((x) => x.id === (m.teamA || m.slotA));
+  const tB = t.teams.find((x) => x.id === (m.teamB || m.slotB));
+
+  $('#goals-modal-title').textContent = `⚽ Buteurs & MVP — ${tA?.name || '?'} vs ${tB?.name || '?'}`;
+  const body = $('#goals-modal-body');
+  if (!body) return;
+  clear(body);
+
+  const renderBody = () => {
+    clear(body);
+
+    // Helper : select d'un joueur d'une équipe
+    const buildPlayerSelect = (slot, isMvp) => {
+      const teamId = slot === 'A' ? (m.teamA || m.slotA) : (m.teamB || m.slotB);
+      const teamPlayers = (t.players || []).filter((p) => p.teamId === teamId)
+        .sort((a, b) => a.number - b.number);
+      if (!teamPlayers.length) {
+        return el('span', { class: 'muted', style: { fontSize: '0.8rem' } },
+          `Aucun joueur pour ${slot === 'A' ? tA?.name : tB?.name}. Clique sur l'équipe dans l'onglet "Equipes" pour ajouter des joueurs.`);
+      }
+      const select = el('select', { class: 'input' },
+        el('option', { value: '' }, '— choisir un joueur —'),
+        ...teamPlayers.map((p) => el('option', { value: p.id }, `#${p.number} ${p.name}`)),
+      );
+      return select;
+    };
+
+    // ------------ Section A ------------
+    const buildGoalsRow = (slot, teamLabel) => {
+      const goals = (m.goals && m.goals[slot]) || [];
+      const container = el('div', { class: 'goals-side' });
+      container.appendChild(el('span', { class: 'team-label' }, teamLabel));
+      container.appendChild(el('span', { class: 'score-num' }, String(goals.length)));
+      const sel = buildPlayerSelect(slot, false);
+      const minuteInput = el('input', { type: 'number', min: '0', max: '120', placeholder: 'min', class: 'input', style: { width: '70px' } });
+      const addBtn = el('button', { class: 'btn btn-primary btn-sm', onclick: () => {
+        const playerId = sel.value;
+        if (!playerId) { toast('Selectionne un joueur.', 'warn'); return; }
+        const minute = minuteInput.value ? parseInt(minuteInput.value, 10) : null;
+        if (minute != null && (!Number.isFinite(minute) || minute < 0)) { toast('Minute invalide.', 'warn'); return; }
+        store.addGoal(kind, matchId, { slot, playerId, minute });
+        const updated = ((kind === 'poule') ? store.currentTournament().matches : store.currentTournament().bracketMatches).find((x) => x.id === matchId);
+        if (updated) Object.assign(m, updated);
+        renderBody();
+      } }, '+ But');
+      container.appendChild(sel);
+      container.appendChild(minuteInput);
+      container.appendChild(addBtn);
+
+      // Liste des buts déjà saisis
+      if (goals.length) {
+        const goalList = el('ul', { class: 'goals-list' });
+        goals.forEach((g, idx) => {
+          const player = t.players.find((p) => p.id === g.playerId);
+          const li = el('li', {},
+            el('span', { style: { fontWeight: 600 } }, player?.name || '?'),
+            g.minute != null ? ` · ${g.minute}'` : '',
+            el('button', { class: 'btn btn-sm btn-danger', style: { marginLeft: '8px', padding: '2px 6px', fontSize: '0.7rem' },
+              onclick: () => {
+                store.removeGoal(kind, matchId, slot, idx);
+                const updated = ((kind === 'poule') ? store.currentTournament().matches : store.currentTournament().bracketMatches).find((x) => x.id === matchId);
+                if (updated) Object.assign(m, updated);
+                renderBody();
+              }
+            }, '×')
+          );
+          goalList.appendChild(li);
+        });
+        body.appendChild(container);
+        body.appendChild(goalList);
+      } else {
+        body.appendChild(container);
+      }
+    };
+    buildGoalsRow('A', tA?.name || 'Équipe A');
+    buildGoalsRow('B', tB?.name || 'Équipe B');
+
+    // ------------ Section MVP ------------
+    const mvpId = m.mvp || '';
+    const mvpSelectWrap = el('div', { class: 'goals-mvp' });
+    const mvpPlayerSelect = (allPlayersSelectMvp());
+    mvpPlayerSelect.value = mvpId;
+    mvpPlayerSelect.addEventListener('change', () => {
+      store.setMvp(kind, matchId, mvpPlayerSelect.value || null);
+      const updated = ((kind === 'poule') ? store.currentTournament().matches : store.currentTournament().bracketMatches).find((x) => x.id === matchId);
+      if (updated) Object.assign(m, updated);
+      toast(mvpPlayerSelect.value ? 'MVP enregistre.' : 'MVP retire.');
+    });
+    mvpSelectWrap.appendChild(el('label', {}, '⭐ Joueur du match (optionnel)'));
+    mvpSelectWrap.appendChild(mvpPlayerSelect);
+    body.appendChild(mvpSelectWrap);
+  };
+
+  // Helper pour le select MVP (peut etre n'importe quel joueur des 2 equipes)
+  const tA2 = t.teams.find((x) => x.id === (m.teamA || m.slotA));
+  const tB2 = t.teams.find((x) => x.id === (m.teamB || m.slotB));
+  function allPlayersSelectMvp() {
+    const select = el('select', { class: 'input' },
+      el('option', { value: '' }, '— aucun MVP —'),
+      ...(t.players || [])
+        .filter((p) => p.teamId === tA2?.id || p.teamId === tB2?.id)
+        .sort((a, b) => a.number - b.number)
+        .map((p) => {
+          const teamName = p.teamId === tA2?.id ? tA2.name : tB2?.name || '?';
+          return el('option', { value: p.id }, `#${p.number} ${p.name} (${teamName})`);
+        }),
+    );
+    return select;
+  }
+
+  renderBody();
+  $('#goals-modal').classList.add('show');
+}
+
+function closeGoalsModal() {
+  $('#goals-modal')?.classList.remove('show');
+  goalsModalCtx = null;
 }
 
 // ================================================================
@@ -597,7 +835,7 @@ function renderPoulesTab() {
     const grid = el('div', { class: 'poules-grid' });
     t.poules.forEach((pouleTeams, idx) => {
       const matches = t.matches.filter((m) => m.pouleIdx === idx);
-      grid.appendChild(renderPoule(idx, pouleTeams, matches, t.config.qualifiersPerPool, true, handlePouleMatchChange));
+      grid.appendChild(renderPoule(idx, pouleTeams, matches, t.config.qualifiersPerPool, true, handlePouleMatchChange, openGoalsModalForPoule));
     });
     container.appendChild(grid);
   }
@@ -621,6 +859,11 @@ function handlePouleMatchChange(matchId, teamKey, value) {
       s.history.push({ at: m.finishedAt, type: 'match-finished', label: `${tA?.name || '?'} ${m.scoreA}-${m.scoreB} ${tB?.name || '?'}`, data: { matchId: m.id, kind: 'poule' } });
     }
   });
+}
+
+// Bouton buteurs dans une ligne de match de poule
+function openGoalsModalForPoule(matchId, _kind) {
+  openGoalsModal(matchId, 'poule', null);
 }
 
 function renderQualifiersSection() {
@@ -803,6 +1046,13 @@ function openBracketModal(match, rIdx, mIdx) {
     el('input', { type: 'number', min: '0', class: 'input', id: 'modal-scoreB', value: match.scoreB ?? 0 })));
   body.appendChild(row);
   body.appendChild(el('p', { class: 'help' }, match.isThirdPlace ? 'Match pour la 3e place.' : 'Saisis les scores. Vainqueur désigné automatiquement.'));
+  // Bouton optionnel : buteurs + MVP
+  body.appendChild(el('div', { style: { marginTop: '12px', textAlign: 'center' } },
+    el('button', {
+      class: 'btn btn-ghost',
+      onclick: () => openGoalsModal(match.id, 'bracket', match),
+    }, '⚽ Buteurs & MVP (optionnel)')
+  ));
   $('#modal-save').textContent = 'Valider le score';
   $('#bracket-modal').classList.add('show');
   $('#modal-scoreA').focus(); $('#modal-scoreA').select();

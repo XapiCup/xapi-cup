@@ -386,6 +386,76 @@ a:hover { text-decoration: underline; }
   line-height: 1;
 }
 .team-item .team-remove:hover { background: rgba(193, 39, 45, 0.1); }
+.team-item .team-edit {
+  background: none; border: none;
+  color: var(--color-primary);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 1rem;
+  line-height: 1;
+}
+.team-item .team-edit:hover { background: rgba(15, 81, 50, 0.1); }
+
+/* Modal joueurs */
+.players-roster {
+  list-style: none;
+  margin: 0; padding: 0;
+  display: grid;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.player-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  background: var(--color-surface-2);
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+}
+.player-number {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 32px; height: 32px; padding: 0 6px;
+  background: var(--color-primary);
+  color: white; font-weight: 700;
+  border-radius: 4px; font-size: 0.95rem;
+}
+.player-name { font-weight: 500; }
+.player-add-form { padding-top: 8px; }
+
+/* Modal buteurs */
+.goals-side {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--color-border);
+}
+.goals-side:last-child { border-bottom: none; }
+.goals-side .team-label { font-weight: 600; min-width: 110px; }
+.goals-side .score-num {
+  min-width: 28px; height: 28px; padding: 0 6px;
+  background: var(--color-accent); color: white; border-radius: 4px;
+  display: inline-flex; align-items: center; justify-content: center; font-weight: 700;
+}
+.goals-side select { flex: 1; }
+.goals-list {
+  margin: 8px 0; padding-left: 16px;
+  font-size: 0.85rem; color: var(--color-muted);
+}
+.goals-list li { padding: 2px 0; }
+.goals-mvp {
+  margin-top: 16px; padding: 12px;
+  background: linear-gradient(135deg, rgba(212, 160, 23, 0.1) 0%, rgba(212, 160, 23, 0.05) 100%);
+  border: 1px solid var(--color-gold, #d4a017);
+  border-radius: 6px;
+}
+.goals-mvp label { display: block; font-weight: 700; color: var(--color-gold, #d4a017); margin-bottom: 6px; }
+.match-goals-btn {
+  background: none; border: 1px dashed var(--color-primary);
+  color: var(--color-primary); padding: 3px 8px;
+  border-radius: 4px; cursor: pointer;
+  font-size: 0.75rem; margin-left: 8px;
+}
+.match-goals-btn:hover { background: rgba(15, 81, 50, 0.1); }
 
 .teams-count {
   display: inline-block;
