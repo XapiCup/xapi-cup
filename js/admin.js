@@ -50,6 +50,8 @@ onReady(() => {
   bindLogoutButton();
   bindPasswordChange();
   bindDashboardUI();
+  bindDateModal();
+  bindExportImport();
 
   store.subscribe(() => {
     // Si le tournoi courant a été supprimé et qu'on était sur sa vue, retour dashboard
@@ -282,6 +284,36 @@ function bindDashboardUI() {
   });
 }
 
+function bindExportImport() {
+  // Export global (toutes les données)
+  $('#dashboard-export-json-btn')?.addEventListener('click', () => {
+    const json = store.exportJSON();
+    const d = new Date();
+    const fname = `xapi-cup-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}.json`;
+    downloadFile(fname, json);
+    toast('Sauvegarde téléchargée ✓', 'success');
+  });
+  // Import global
+  $('#dashboard-import-json-input')?.addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!confirm('Importer ce fichier va REMPLACER toutes les données actuelles. Continuer ?')) {
+      e.target.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const ok = store.importJSON(reader.result);
+      if (ok) {
+        toast('Données importées ✓', 'success');
+        renderDashboard();
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
+}
+
 function bindPasswordChange() {
   const modal = $('#password-modal');
   if (!modal) return;
@@ -452,17 +484,41 @@ function buildTournamentCard(t) {
   return card;
 }
 
+let editingDateTournament = null;
+
 function promptDate(t) {
-  const date = prompt('Date du tournoi (yyyy-mm-dd) :', t.date || '');
-  if (date === null) return;
-  const endDate = t.endDate && t.endDate !== t.date ? prompt('Date de fin (yyyy-mm-dd, optionnel) :', t.endDate || '') : null;
-  if (date === '' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    toast('Date invalide (format yyyy-mm-dd).', 'warn');
-    return;
-  }
-  store.setTournamentDate(t.id, date, endDate);
-  toast('Date mise à jour ✓', 'success');
-  renderDashboard();
+  editingDateTournament = t;
+  const modal = $('#date-modal');
+  if (!modal) return;
+  $('#date-modal-tournament-name').textContent = t.name;
+  $('#date-start-input').value = t.date || '';
+  $('#date-end-input').value = t.endDate || '';
+  $('#date-location-input').value = t.location || '';
+  modal.classList.add('show');
+  setTimeout(() => $('#date-start-input').focus(), 50);
+}
+
+function bindDateModal() {
+  const modal = $('#date-modal');
+  if (!modal) return;
+  const close = () => { modal.classList.remove('show'); editingDateTournament = null; };
+  $('#date-cancel')?.addEventListener('click', close);
+  modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+  $('#date-save')?.addEventListener('click', () => {
+    if (!editingDateTournament) return;
+    const t = editingDateTournament;
+    const date = $('#date-start-input').value || null;
+    const endDate = $('#date-end-input').value || null;
+    const location = $('#date-location-input').value || '';
+    if (date && endDate && endDate < date) {
+      toast('La date de fin doit être après la date de début.', 'warn');
+      return;
+    }
+    store.setTournamentDate(t.id, date, endDate, location);
+    toast('Dates mises à jour ✓', 'success');
+    close();
+    renderDashboard();
+  });
 }
 
 function togglePublic(t) {
@@ -1369,8 +1425,8 @@ function renderPlanningGrid() {
   const cfg = p.config;
   const days = cfg.days || [];
   if (!days.length) {
-    grid.appendChild(el('div', { class: 'muted', style: { padding: '20px', textAlign: 'center', gridColumn: '1 / -1' } },
-      'Aucun jour. Selectionne des tournois et genere le planning.'));
+    grid.appendChild(el('div', { class: 'muted', style: { padding: '20px', textAlign: 'center' } },
+      'Aucun jour. Sélectionne des tournois et génère le planning.'));
     return;
   }
 
@@ -1379,13 +1435,19 @@ function renderPlanningGrid() {
   const allEnd = p.matches.map((m) => (m.startMin || 0) + m.durationMin);
   const minStart = allStart.length ? Math.min(...allStart) : parseTimeToMin(cfg.startTime);
   const maxEnd = allStart.length ? Math.max(...allEnd) : minStart + 240;
-  const STEP = 10;
+  const STEP = 10; // 10 min per row
+  const ROW_PX = 28; // hauteur d'une ligne en px
   const startHour = Math.floor(minStart / 60);
   const endHour = Math.ceil(maxEnd / 60) + 1;
-
+  const totalRows = (endHour - startHour) * (60 / STEP);
   const totalCols = 1 + (terrains * days.length);
-  grid.style.gridTemplateColumns = `60px repeat(${terrains * days.length}, 1fr)`;
 
+  // Conteneur principal : grille CSS pour les cellules + couche absolute pour les matchs
+  grid.style.gridTemplateColumns = `70px repeat(${terrains * days.length}, 1fr)`;
+  grid.style.gridAutoRows = `${ROW_PX}px`;
+  grid.style.position = 'relative';
+
+  // En-têtes
   grid.appendChild(el('div', { class: 'planning-grid-header' }, 'Heure'));
   days.forEach((d) => {
     for (let t = 1; t <= terrains; t++) {
@@ -1395,9 +1457,13 @@ function renderPlanningGrid() {
     }
   });
 
-  for (let hour = startHour; hour <= endHour; hour++) {
-    const mins = hour * 60;
-    grid.appendChild(el('div', { class: 'planning-grid-time' }, formatMinToTime(mins)));
+  // Lignes : heure + cellules
+  for (let row = 0; row < totalRows; row++) {
+    const mins = (startHour * 60) + (row * STEP);
+    // Colonne heure
+    const timeCell = el('div', { class: 'planning-grid-time' }, (mins % 60 === 0) ? formatMinToTime(mins) : '');
+    grid.appendChild(timeCell);
+
     days.forEach((d) => {
       for (let t = 1; t <= terrains; t++) {
         const cell = el('div', {
@@ -1408,6 +1474,7 @@ function renderPlanningGrid() {
         });
         cell.addEventListener('dragover', (e) => {
           e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
           cell.classList.add('drag-over');
         });
         cell.addEventListener('dragleave', () => cell.classList.remove('drag-over'));
@@ -1415,7 +1482,7 @@ function renderPlanningGrid() {
           e.preventDefault();
           cell.classList.remove('drag-over');
           if (!planningDragData) return;
-        const itemId = planningDragData.itemId;
+          const itemId = planningDragData.itemId;
           const target = {
             day: cell.dataset.day,
             terrain: parseInt(cell.dataset.terrain, 10),
@@ -1424,10 +1491,11 @@ function renderPlanningGrid() {
           const collision = store.movePlanningItem(itemId, target);
           if (collision) {
             store.unplacePlanningItem(itemId);
-            toast('Creneau occupe, match remis dans la sidebar.', 'warn');
+            toast('Créneau occupé, match remis dans la sidebar.', 'warn');
           } else {
-            toast('Match deplace.');
+            toast('Match positionné ✓');
           }
+          planningDragData = null;
           renderPlanning();
         });
         grid.appendChild(cell);
@@ -1435,38 +1503,67 @@ function renderPlanningGrid() {
     });
   }
 
+  // Couche overlay pour les matchs placés (position: absolute par-dessus la grille)
+  const overlay = el('div', { class: 'planning-overlay' });
+  overlay.style.position = 'absolute';
+  overlay.style.top = '0';
+  overlay.style.left = '0';
+  overlay.style.right = '0';
+  overlay.style.bottom = '0';
+  overlay.style.pointerEvents = 'none'; // laisse les cellules recevoir les events
+  grid.appendChild(overlay);
+
+  // Matchs placés
   p.matches.forEach((m) => {
     if (m.day == null || m.terrain == null || m.startMin == null) return;
     const terrainIdx = m.terrain - 1;
     const dayIdx = days.indexOf(m.day);
     if (terrainIdx < 0 || dayIdx < 0) return;
+    // Colonne 0 = heure, puis terrains
     const col = 1 + (dayIdx * terrains) + terrainIdx;
-    const startHourOffset = m.startMin - startHour * 60;
-    const rowSpan = Math.ceil(m.durationMin / STEP);
+    const startRow = Math.round((m.startMin - startHour * 60) / STEP);
+    const rowSpan = Math.max(1, Math.ceil(m.durationMin / STEP));
     const matchEl = buildPlanningMatchEl(m);
-    matchEl.style.gridColumn = `${col + 1} / span 1`;
-    matchEl.style.gridRow = `${startHourOffset / STEP + 2} / span ${rowSpan}`;
-    grid.appendChild(matchEl);
+    matchEl.style.pointerEvents = 'auto'; // re-active pour drag
+    matchEl.style.position = 'absolute';
+    // Calcul position approximatif via pourcentages
+    const colPct = (col / totalCols) * 100;
+    const colWidth = 100 / totalCols;
+    const topPx = (startRow + 1) * ROW_PX; // +1 pour l'en-tête
+    matchEl.style.left = `calc(${colPct}% + 2px)`;
+    matchEl.style.width = `calc(${colWidth}% - 4px)`;
+    matchEl.style.top = `${topPx}px`;
+    matchEl.style.height = `${rowSpan * ROW_PX - 2}px`;
+    overlay.appendChild(matchEl);
   });
 
+  // Pauses
   (p.breaks || []).forEach((b) => {
     const terrainIdx = b.terrain - 1;
     const dayIdx = days.indexOf(b.day);
     if (terrainIdx < 0 || dayIdx < 0) return;
     const col = 1 + (dayIdx * terrains) + terrainIdx;
-    const startHourOffset = b.startMin - startHour * 60;
+    const startRow = Math.round((b.startMin - startHour * 60) / STEP);
     const rowSpan = Math.ceil(b.durationMin / STEP);
+    const colPct = (col / totalCols) * 100;
+    const colWidth = 100 / totalCols;
+    const topPx = (startRow + 1) * ROW_PX;
     const breakEl = el('div', { class: 'planning-break', draggable: 'true' },
       '🍽️ Pause', el('span', { class: 'muted', style: { fontSize: '0.7rem', marginLeft: 'auto' } }, formatMinToTime(b.startMin)),
       el('button', { class: 'match-remove', onclick: (e) => { e.stopPropagation(); store.removePlanningItem(b.id); renderPlanning(); } }, 'x')
     );
-    breakEl.style.gridColumn = `${col + 1} / span 1`;
-    breakEl.style.gridRow = `${startHourOffset / STEP + 2} / span ${rowSpan}`;
+    breakEl.style.pointerEvents = 'auto';
+    breakEl.style.position = 'absolute';
+    breakEl.style.left = `calc(${colPct}% + 2px)`;
+    breakEl.style.width = `calc(${colWidth}% - 4px)`;
+    breakEl.style.top = `${topPx}px`;
+    breakEl.style.height = `${rowSpan * ROW_PX - 2}px`;
     breakEl.addEventListener('dragstart', (e) => {
       planningDragData = { itemId: b.id, isBreak: true };
       e.dataTransfer.setData('text/plain', b.id);
+      e.dataTransfer.effectAllowed = 'move';
     });
-    grid.appendChild(breakEl);
+    overlay.appendChild(breakEl);
   });
 }
 
@@ -1486,9 +1583,30 @@ function buildPlanningMatchEl(m) {
   matchEl.addEventListener('dragstart', (e) => {
     planningDragData = { itemId: m.id };
     e.dataTransfer.setData('text/plain', m.id);
+    e.dataTransfer.effectAllowed = 'move';
     matchEl.classList.add('dragging');
   });
   matchEl.addEventListener('dragend', () => matchEl.classList.remove('dragging'));
+  // Permettre de drop sur un match placé pour échanger
+  matchEl.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); matchEl.style.outline = '2px dashed var(--color-accent)'; });
+  matchEl.addEventListener('dragleave', () => { matchEl.style.outline = ''; });
+  matchEl.addEventListener('drop', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    matchEl.style.outline = '';
+    if (!planningDragData || planningDragData.itemId === m.id) return;
+    // Échanger les positions
+    const target = { day: m.day, terrain: m.terrain, startMin: m.startMin, durationMin: m.durationMin };
+    const collision = store.movePlanningItem(planningDragData.itemId, target);
+    if (collision) {
+      // Si collision, on déplace le match existant vers la sidebar et on place le nouveau
+      store.unplacePlanningItem(m.id);
+      store.movePlanningItem(planningDragData.itemId, target);
+      toast('Match échangé.');
+    } else {
+      toast('Match déplacé.');
+    }
+    renderPlanning();
+  });
   return matchEl;
 }
 
@@ -1497,16 +1615,26 @@ function renderPlanningSidebar() {
   if (!sidebar) return;
   clear(sidebar);
   const unplaced = store.state.planning.matches.filter((m) => m.day == null || m.terrain == null || m.startMin == null);
-  sidebar.appendChild(el('h3', {}, `📦 Matchs non positionnes (${unplaced.length})`));
+  sidebar.appendChild(el('h3', {}, `📦 Matchs à positionner (${unplaced.length})`));
   if (!unplaced.length) {
-    sidebar.appendChild(el('div', { class: 'muted', style: { padding: '8px 0' } }, 'Tous les matchs sont places.'));
+    sidebar.appendChild(el('div', { class: 'muted', style: { padding: '8px 0' } }, 'Tous les matchs sont placés ✓'));
     return;
   }
   unplaced.forEach((m) => {
     const el2 = buildPlanningMatchEl(m);
+    el2.style.position = 'relative';
+    el2.style.height = 'auto';
+    el2.style.marginBottom = '4px';
     sidebar.appendChild(el2);
   });
+}
 
+// Listeners drag&drop sur la sidebar (bind une seule fois)
+let sidebarDropBound = false;
+function bindSidebarDrop() {
+  if (sidebarDropBound) return;
+  const sidebar = $('#planning-sidebar');
+  if (!sidebar) return;
   sidebar.addEventListener('dragover', (e) => { e.preventDefault(); sidebar.style.background = 'rgba(193, 39, 45, 0.1)'; });
   sidebar.addEventListener('dragleave', () => { sidebar.style.background = ''; });
   sidebar.addEventListener('drop', (e) => {
@@ -1514,12 +1642,15 @@ function renderPlanningSidebar() {
     sidebar.style.background = '';
     if (!planningDragData) return;
     store.unplacePlanningItem(planningDragData.itemId);
+    planningDragData = null;
     renderPlanning();
     toast('Match remis dans la sidebar.');
   });
+  sidebarDropBound = true;
 }
 
 function bindPlanningUI() {
+  bindSidebarDrop();
   $('#dashboard-planning-btn')?.addEventListener('click', showPlanningView);
   $('#back-to-dashboard-from-planning')?.addEventListener('click', () => {
     view = 'dashboard';
