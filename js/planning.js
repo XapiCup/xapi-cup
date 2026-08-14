@@ -5,8 +5,6 @@
 import { $, $$, el, clear, onReady } from './app.js';
 import { store } from './state.js';
 
-const STEP = 10; // granularite 10 min (meme que admin)
-
 function parseTimeToMin(t) {
   if (!t) return 540;
   const [h, m] = t.split(':').map(Number);
@@ -19,11 +17,12 @@ function formatMinToTime(mins) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-function prettyDay(d) {
+function prettyDayFull(d) {
   const [y, m, day] = d.split('-').map(Number);
   const date = new Date(y, m - 1, day);
   const jours = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
-  return `${jours[date.getDay()]} ${day}/${m}/${y}`;
+  const mois = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+  return `${jours[date.getDay()]} ${day} ${mois[m - 1]}`;
 }
 
 function renderPlanning() {
@@ -39,7 +38,8 @@ function renderPlanning() {
       meta.textContent = 'Le planning n\'est pas encore publié.';
     } else {
       const days = p.config.days || [];
-      meta.textContent = `${days.length} jour(s) · ${p.config.terrains} terrain(s) · début ${p.config.startTime} · match ${p.config.matchDuration}min · pause ${p.config.breakDuration}min`;
+      const slot = (p.config.matchDuration || 20) + (p.config.breakDuration || 0);
+      meta.textContent = `${days.length} jour(s) · ${p.config.terrains} terrain(s) · ${p.config.startTime} → ${p.config.endTime || '19:00'} · match ${p.config.matchDuration}min · pause ${p.config.breakDuration}min · créneau ${slot}min`;
     }
   }
 
@@ -61,70 +61,117 @@ function renderPlanning() {
   }
 
   const terrains = p.config.terrains;
-  const allStart = p.matches.map((m) => m.startMin).filter((x) => x != null);
-  const allEnd = p.matches.map((m) => (m.startMin || 0) + m.durationMin);
-  const minStart = allStart.length ? Math.min(...allStart) : parseTimeToMin(p.config.startTime);
-  const maxEnd = allStart.length ? Math.max(...allEnd) : minStart + 240;
-  const startHour = Math.floor(minStart / 60);
-  const endHour = Math.ceil(maxEnd / 60) + 1;
+  const SLOT = (p.config.matchDuration || 20) + (p.config.breakDuration || 0);
 
-  const grid = el('div', { class: 'planning-grid', style: { gridTemplateColumns: `60px repeat(${terrains * days.length}, 1fr)` } });
+  // Plage horaire : de l'heure de début jusqu'à l'heure de fin configurée
+  const cfgStart = parseTimeToMin(p.config.startTime);
+  const cfgEnd = parseTimeToMin(p.config.endTime || '19:00');
+  const allEnd = p.matches.map((m) => (m.startMin || 0) + m.durationMin).filter((x) => x != null);
+  const maxEnd = Math.max(cfgEnd, ...(allEnd.length ? allEnd : [cfgStart + SLOT * 6]));
+  const startMin = Math.floor(cfgStart / SLOT) * SLOT;
+  const endMin = Math.ceil(maxEnd / SLOT) * SLOT;
+  const totalSlots = Math.round((endMin - startMin) / SLOT);
 
-  // Header row
-  grid.appendChild(el('div', { class: 'planning-grid-header' }, 'Heure'));
+  // Heure de fin globale
+  const globalEnd = allEnd.length ? Math.max(...allEnd) : null;
+
+  // Grille publique (jours empilés verticalement, comme l'admin)
+  const grid = el('div', { class: 'planning-grid', style: { display: 'flex', flexDirection: 'column', gap: '24px', padding: '12px' } });
+
   days.forEach((d) => {
-    for (let t = 1; t <= terrains; t++) {
-      grid.appendChild(el('div', { class: 'planning-grid-header' },
-        el('div', {}, prettyDay(d)),
-        el('div', { class: 'muted', style: { fontSize: '0.7rem' } }, `Terrain ${t}`)));
-    }
-  });
+    const dayBlock = el('div', { class: 'planning-day-block', style: { border: '1px solid var(--color-border)', borderRadius: '8px', overflow: 'hidden' } });
 
-  // Time slots
-  for (let hour = startHour; hour <= endHour; hour++) {
-    const mins = hour * 60;
-    grid.appendChild(el('div', { class: 'planning-grid-time' }, formatMinToTime(mins)));
-    days.forEach((d) => {
-      for (let t = 1; t <= terrains; t++) {
-        grid.appendChild(el('div', { class: 'planning-grid-cell' }));
+    // En-tête du jour avec heure de fin
+    const dayMatches = p.matches.filter((m) => m.day === d && m.startMin != null);
+    const dayEnd = dayMatches.length ? Math.max(...dayMatches.map((m) => m.startMin + m.durationMin)) : null;
+    const headerText = dayEnd
+      ? `📅 ${prettyDayFull(d)} — ${formatMinToTime(cfgStart)} → ${formatMinToTime(dayEnd)}`
+      : `📅 ${prettyDayFull(d)}`;
+    dayBlock.appendChild(el('div', { class: 'planning-day-header', style: { background: 'var(--color-primary)', color: 'white', padding: '10px 16px', fontWeight: '700' } },
+      el('span', { style: { fontSize: '1.1rem' } }, headerText)));
+
+    // Grille du jour
+    const dayGrid = el('div', { class: 'planning-day-grid', style: { display: 'grid', gap: '1px', background: 'var(--color-border)' } });
+    dayGrid.style.gridTemplateColumns = `70px repeat(${terrains}, minmax(130px, 1fr))`;
+    dayGrid.style.gridAutoRows = '44px';
+
+    // En-têtes (ligne 1)
+    const hTime = el('div', { class: 'planning-grid-header', style: { gridColumn: '1', gridRow: '1' } }, 'Heure');
+    dayGrid.appendChild(hTime);
+    for (let t = 1; t <= terrains; t++) {
+      const h = el('div', { class: 'planning-grid-header', style: { gridColumn: `${t + 1}`, gridRow: '1' } },
+        el('div', {}, `Terrain ${t}`));
+      dayGrid.appendChild(h);
+    }
+
+    // Indexer les matchs et pauses placés
+    const placedHere = new Map();
+    p.matches.forEach((m) => {
+      if (m.day !== d || m.terrain == null || m.startMin == null) return;
+      const slotIdx = Math.round((m.startMin - startMin) / SLOT);
+      const slotCount = Math.max(1, Math.round(m.durationMin / SLOT));
+      for (let r = 0; r < slotCount; r++) {
+        placedHere.set(`${m.terrain}|${slotIdx + r}`, { type: 'match', data: m, isStart: r === 0, slotCount });
       }
     });
+    (p.breaks || []).forEach((b) => {
+      if (b.day !== d || b.terrain == null || b.startMin == null) return;
+      const slotIdx = Math.round((b.startMin - startMin) / SLOT);
+      const slotCount = Math.max(1, Math.round(b.durationMin / SLOT));
+      for (let r = 0; r < slotCount; r++) {
+        placedHere.set(`${b.terrain}|${slotIdx + r}`, { type: 'break', data: b, isStart: r === 0, slotCount });
+      }
+    });
+
+    // Cellules
+    for (let slot = 0; slot < totalSlots; slot++) {
+      const mins = startMin + (slot * SLOT);
+      const rowIdx = slot + 2;
+
+      // Colonne heure
+      const timeCell = el('div', { class: 'planning-grid-time', style: { gridColumn: '1', gridRow: `${rowIdx}` } }, formatMinToTime(mins));
+      dayGrid.appendChild(timeCell);
+
+      // Cellules par terrain
+      for (let t = 1; t <= terrains; t++) {
+        const key = `${t}|${slot}`;
+        const placed = placedHere.get(key);
+        const colIdx = t + 1;
+
+        if (placed && placed.isStart && placed.type === 'match') {
+          const cell = el('div', { class: 'planning-grid-cell has-match', style: { gridColumn: `${colIdx}`, gridRow: `${rowIdx} / span ${placed.slotCount}`, position: 'relative', overflow: 'hidden', background: 'transparent', padding: '0' } });
+          const matchEl = el('div', {
+            class: 'planning-match' + (placed.data.kind === 'bracket-placeholder' ? ' bracket-placeholder' : ''),
+            style: { position: 'absolute', inset: '0', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '4px 8px' },
+          },
+            el('span', { class: 'match-time', style: { fontWeight: '700' } }, formatMinToTime(placed.data.startMin)),
+            el('span', { class: 'match-label', style: { fontSize: '0.75rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, placed.data.label),
+          );
+          cell.appendChild(matchEl);
+          dayGrid.appendChild(cell);
+        } else if (placed && placed.isStart && placed.type === 'break') {
+          const cell = el('div', { class: 'planning-grid-cell has-break', style: { gridColumn: `${colIdx}`, gridRow: `${rowIdx} / span ${placed.slotCount}`, position: 'relative', overflow: 'hidden', background: 'transparent', padding: '0' } });
+          const breakEl = el('div', { class: 'planning-break', style: { position: 'absolute', inset: '0', display: 'flex', alignItems: 'center', padding: '4px 8px' } },
+            '🍽️ Pause déj', el('span', { class: 'muted', style: { fontSize: '0.7rem', marginLeft: 'auto' } }, formatMinToTime(placed.data.startMin)));
+          cell.appendChild(breakEl);
+          dayGrid.appendChild(cell);
+        } else if (placed && !placed.isStart) {
+          dayGrid.appendChild(el('div', { class: 'planning-grid-cell', style: { gridColumn: `${colIdx}`, gridRow: `${rowIdx}`, visibility: 'hidden' } }));
+        } else {
+          dayGrid.appendChild(el('div', { class: 'planning-grid-cell', style: { gridColumn: `${colIdx}`, gridRow: `${rowIdx}` } }));
+        }
+      }
+    }
+
+    dayBlock.appendChild(dayGrid);
+    grid.appendChild(dayBlock);
+  });
+
+  // Heure de fin globale
+  if (globalEnd != null) {
+    grid.appendChild(el('div', { style: { textAlign: 'center', padding: '12px', fontWeight: '700', color: 'var(--color-primary)' } },
+      `🏆 Fin des tournois : ${formatMinToTime(globalEnd)}`));
   }
-
-  // Matchs
-  p.matches.forEach((m) => {
-    if (m.day == null || m.terrain == null || m.startMin == null) return;
-    const terrainIdx = m.terrain - 1;
-    const dayIdx = days.indexOf(m.day);
-    if (terrainIdx < 0 || dayIdx < 0) return;
-    const col = 1 + (dayIdx * terrains) + terrainIdx;
-    const startHourOffset = m.startMin - startHour * 60;
-    const rowSpan = Math.ceil(m.durationMin / STEP);
-    const matchEl = el('div', {
-      class: 'planning-match' + (m.kind === 'bracket-placeholder' ? ' bracket-placeholder' : ''),
-    },
-      el('span', { class: 'match-time' }, formatMinToTime(m.startMin)),
-      el('span', { class: 'match-label', title: m.label }, m.label),
-    );
-    matchEl.style.gridColumn = `${col + 1} / span 1`;
-    matchEl.style.gridRow = `${startHourOffset / STEP + 2} / span ${rowSpan}`;
-    grid.appendChild(matchEl);
-  });
-
-  // Pauses
-  (p.breaks || []).forEach((b) => {
-    const terrainIdx = b.terrain - 1;
-    const dayIdx = days.indexOf(b.day);
-    if (terrainIdx < 0 || dayIdx < 0) return;
-    const col = 1 + (dayIdx * terrains) + terrainIdx;
-    const startHourOffset = b.startMin - startHour * 60;
-    const rowSpan = Math.ceil(b.durationMin / STEP);
-    const breakEl = el('div', { class: 'planning-break' },
-      '🍽️ Pause', el('span', { class: 'muted', style: { fontSize: '0.7rem', marginLeft: 'auto' } }, formatMinToTime(b.startMin)));
-    breakEl.style.gridColumn = `${col + 1} / span 1`;
-    breakEl.style.gridRow = `${startHourOffset / STEP + 2} / span ${rowSpan}`;
-    grid.appendChild(breakEl);
-  });
 
   container.appendChild(grid);
 }
