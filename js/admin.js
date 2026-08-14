@@ -1457,7 +1457,6 @@ function renderPlanningGrid() {
     const dayGrid = el('div', { class: 'planning-day-grid' });
     dayGrid.style.gridTemplateColumns = `70px repeat(${terrains}, minmax(130px, 1fr))`;
     dayGrid.style.gridAutoRows = '32px';
-    dayGrid.style.position = 'relative';
 
     // En-têtes terrains (ligne 1)
     dayGrid.appendChild(el('div', { class: 'planning-grid-header' }, 'Heure'));
@@ -1466,7 +1465,30 @@ function renderPlanningGrid() {
         el('div', {}, `Terrain ${t}`)));
     }
 
-    // Cellules vides (pour le drag&drop)
+    // Indexer les matchs et pauses placés pour ce jour
+    const placedHere = new Map(); // key: "terrain|row" -> {type, data, rowSpan}
+    p.matches.forEach((m) => {
+      if (m.day !== d || m.terrain == null || m.startMin == null) return;
+      const terrainIdx = m.terrain - 1;
+      if (terrainIdx < 0 || terrainIdx >= terrains) return;
+      const rowOffset = Math.round((m.startMin - startMin) / STEP);
+      const rowSpan = Math.max(1, Math.round(m.durationMin / STEP));
+      for (let r = 0; r < rowSpan; r++) {
+        placedHere.set(`${m.terrain}|${rowOffset + r}`, { type: 'match', data: m, isStart: r === 0, rowSpan });
+      }
+    });
+    (p.breaks || []).forEach((b) => {
+      if (b.day !== d || b.terrain == null || b.startMin == null) return;
+      const terrainIdx = b.terrain - 1;
+      if (terrainIdx < 0 || terrainIdx >= terrains) return;
+      const rowOffset = Math.round((b.startMin - startMin) / STEP);
+      const rowSpan = Math.max(1, Math.round(b.durationMin / STEP));
+      for (let r = 0; r < rowSpan; r++) {
+        placedHere.set(`${b.terrain}|${rowOffset + r}`, { type: 'break', data: b, isStart: r === 0, rowSpan });
+      }
+    });
+
+    // Cellules
     for (let row = 0; row < totalRows; row++) {
       const mins = startMin + (row * STEP);
       // Colonne heure
@@ -1475,52 +1497,62 @@ function renderPlanningGrid() {
 
       // Cellules par terrain
       for (let t = 1; t <= terrains; t++) {
-        const cell = el('div', {
-          class: 'planning-grid-cell',
-          'data-day': d,
-          'data-terrain': t,
-          'data-start': mins,
-        });
-        attachCellDropHandler(cell, d, t, mins);
-        dayGrid.appendChild(cell);
+        const key = `${t}|${row}`;
+        const placed = placedHere.get(key);
+
+        if (placed && placed.isStart && placed.type === 'match') {
+          // Match placé DANS la cellule
+          const cell = el('div', {
+            class: 'planning-grid-cell has-match',
+            'data-day': d, 'data-terrain': t, 'data-start': mins,
+          });
+          const matchEl = buildPlanningMatchEl(placed.data);
+          matchEl.style.position = 'absolute';
+          matchEl.style.inset = '0';
+          matchEl.style.zIndex = '2';
+          cell.style.position = 'relative';
+          cell.style.gridRow = `span ${placed.rowSpan}`;
+          cell.appendChild(matchEl);
+          // Le drop se fait sur la cellule (le match a pointer-events:none pendant le drag)
+          attachCellDropHandler(cell, d, t, mins);
+          dayGrid.appendChild(cell);
+        } else if (placed && placed.isStart && placed.type === 'break') {
+          // Pause DANS la cellule
+          const cell = el('div', {
+            class: 'planning-grid-cell has-break',
+            'data-day': d, 'data-terrain': t, 'data-start': mins,
+          });
+          cell.style.position = 'relative';
+          cell.style.gridRow = `span ${placed.rowSpan}`;
+          const breakEl = el('div', { class: 'planning-break', draggable: 'true' },
+            '🍽️ Pause', el('span', { class: 'muted', style: { fontSize: '0.7rem', marginLeft: 'auto' } }, formatMinToTime(placed.data.startMin)),
+            el('button', { class: 'match-remove', title: 'Supprimer la pause', onclick: (e) => { e.stopPropagation(); store.removePlanningItem(placed.data.id); renderPlanning(); } }, 'x')
+          );
+          breakEl.style.position = 'absolute';
+          breakEl.style.inset = '0';
+          breakEl.style.zIndex = '2';
+          breakEl.addEventListener('dragstart', (e) => {
+            planningDragData = { itemId: placed.data.id, isBreak: true };
+            e.dataTransfer.setData('text/plain', placed.data.id);
+            e.dataTransfer.effectAllowed = 'move';
+          });
+          cell.appendChild(breakEl);
+          attachCellDropHandler(cell, d, t, mins);
+          dayGrid.appendChild(cell);
+        } else if (placed && !placed.isStart) {
+          // Cellule occupée par la continuation d'un match/pause (non interactive)
+          dayGrid.appendChild(el('div', { class: 'planning-grid-cell occupied' }));
+        } else {
+          // Cellule vide
+          const cell = el('div', {
+            class: 'planning-grid-cell',
+            'data-day': d, 'data-terrain': t, 'data-start': mins,
+          });
+          attachCellDropHandler(cell, d, t, mins);
+          dayGrid.appendChild(cell);
+        }
       }
     }
-
-    // Matchs placés (directement dans la dayGrid, par-dessus les cellules)
-    p.matches.forEach((m) => {
-      if (m.day !== d) return;
-      if (m.terrain == null || m.startMin == null) return;
-      const terrainIdx = m.terrain - 1;
-      if (terrainIdx < 0 || terrainIdx >= terrains) return;
-      const rowOffset = Math.round((m.startMin - startMin) / STEP);
-      const rowSpan = Math.max(1, Math.round(m.durationMin / STEP));
-      const matchEl = buildPlanningMatchEl(m);
-      matchEl.style.gridColumn = `${terrainIdx + 2} / span 1`; // +2 car colonne 1 = heure, et grid est 1-indexed
-      matchEl.style.gridRow = `${rowOffset + 2} / span ${rowSpan}`; // +2 car ligne 1 = header
-      dayGrid.appendChild(matchEl);
-    });
-
-    // Pauses (directement dans la dayGrid)
-    (p.breaks || []).forEach((b) => {
-      if (b.day !== d) return;
-      if (b.terrain == null || b.startMin == null) return;
-      const terrainIdx = b.terrain - 1;
-      if (terrainIdx < 0 || terrainIdx >= terrains) return;
-      const rowOffset = Math.round((b.startMin - startMin) / STEP);
-      const rowSpan = Math.max(1, Math.round(b.durationMin / STEP));
-      const breakEl = el('div', { class: 'planning-break', draggable: 'true' },
-        '🍽️ Pause', el('span', { class: 'muted', style: { fontSize: '0.7rem', marginLeft: 'auto' } }, formatMinToTime(b.startMin)),
-        el('button', { class: 'match-remove', title: 'Supprimer la pause', onclick: (e) => { e.stopPropagation(); store.removePlanningItem(b.id); renderPlanning(); } }, 'x')
-      );
-      breakEl.style.gridColumn = `${terrainIdx + 2} / span 1`;
-      breakEl.style.gridRow = `${rowOffset + 2} / span ${rowSpan}`;
-      breakEl.addEventListener('dragstart', (e) => {
-        planningDragData = { itemId: b.id, isBreak: true };
-        e.dataTransfer.setData('text/plain', b.id);
-        e.dataTransfer.effectAllowed = 'move';
-      });
-      dayGrid.appendChild(breakEl);
-    });
 
     dayBlock.appendChild(dayGrid);
     grid.appendChild(dayBlock);
@@ -1543,8 +1575,8 @@ function attachCellDropHandler(cell, day, terrain, startMin) {
     const target = { day, terrain, startMin };
     const collision = store.movePlanningItem(itemId, target);
     if (collision) {
-      store.unplacePlanningItem(itemId);
-      toast('Créneau occupé, match remis dans la sidebar.', 'warn');
+      // Le match reste où il était, on ne le supprime pas
+      toast('Créneau occupé — le match reste à sa position actuelle.', 'warn');
     } else {
       toast('Match positionné ✓');
     }
