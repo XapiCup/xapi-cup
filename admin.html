@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Admin — Xapi Cup</title>
-  <link rel="stylesheet" href="css/style.css?v=20260814d" />
+  <link rel="stylesheet" href="css/style.css?v=20260814e" />
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 </head>
 <body>
@@ -108,6 +108,10 @@
               <input type="time" id="plan-start-time" value="09:00" class="input" />
             </div>
             <div class="form-group">
+              <label for="plan-end-time">Heure de fin (max)</label>
+              <input type="time" id="plan-end-time" value="19:00" class="input" />
+            </div>
+            <div class="form-group">
               <label for="plan-match-duration">Durée d'un match (min)</label>
               <input type="number" id="plan-match-duration" min="5" max="240" value="20" class="input" />
             </div>
@@ -126,7 +130,7 @@
             </div>
             <div class="form-group">
               <label for="plan-lunch-start">Heure de début déjeuner</label>
-              <input type="time" id="plan-lunch-start" value="12:00" class="input" />
+              <select id="plan-lunch-start" class="input" disabled></select>
             </div>
             <div class="form-group">
               <label for="plan-lunch-duration">Durée déjeuner (nb de créneaux)</label>
@@ -463,6 +467,6 @@ Athletic U13
 
   
 
-  <script type="module" src="js/admin.js?v=20260814d"></script>
+  <script type="module" src="js/admin.js?v=20260814e"></script>
 </body>
 </html>
