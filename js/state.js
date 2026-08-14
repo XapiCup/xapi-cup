@@ -134,14 +134,7 @@ class Store {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        // Merge défensif: s'assurer que tournaments existe toujours
-        const merged = { ...structuredClone(DEFAULT_STATE), ...parsed };
-        if (!merged.tournaments || !Array.isArray(merged.tournaments)) {
-          console.warn('State: tournaments manquants ou invalides, reset à []');
-          merged.tournaments = [];
-        }
-        if (!merged.planning) merged.planning = structuredClone(DEFAULT_STATE.planning);
-        return merged;
+        return { ...structuredClone(DEFAULT_STATE), ...parsed };
       }
       // Essayer de migrer depuis l'ancien format
       const old = localStorage.getItem('xapi-cup-state-v1');
@@ -675,24 +668,28 @@ class Store {
   }
 
   movePlanningItem(itemId, target) {
-    let collision = null;
     const p = this.state.planning;
     const item = p.matches.find((m) => m.id === itemId);
     if (!item) return null;
+    // Libérer l'ancienne position avant de vérifier les collisions
+    const oldDay = item.day, oldTerrain = item.terrain, oldStart = item.startMin;
+    // Exclure l'item déplacé de la détection de collision
     const others = p.matches.filter((m) => m.id !== itemId);
     const conflict = others.find((m) => {
       if (m.day !== target.day || m.terrain !== target.terrain) return false;
+      if (m.startMin == null) return false;
       const aStart = m.startMin, aEnd = m.startMin + m.durationMin;
       const bStart = target.startMin, bEnd = target.startMin + (target.durationMin || item.durationMin);
       return aStart < bEnd && bStart < aEnd;
     });
     if (conflict) return conflict;
+    // Appliquer le déplacement
     item.day = target.day;
     item.terrain = target.terrain;
     item.startMin = target.startMin;
     item.durationMin = target.durationMin || item.durationMin;
     this._save(); this._notify();
-    return collision;
+    return null;
   }
 
   unplacePlanningItem(itemId) {
@@ -741,16 +738,20 @@ class Store {
     const days = Array.from(daysSet).sort();
     this.setPlanningConfig({ days });
 
+    // Construire les listes de matchs par tournoi, en séparant poules et phases finales
+    // Les phases finales doivent commencer APRES que toutes les poules soient terminées
     const allItems = [];
-    const dayNext = new Map();
-    days.forEach((d) => dayNext.set(d, parseTimeToMin(cfg.startTime)));
-
+    
+    // Étape 1: collecter les matchs de poule par tournoi
+    const pouleMatches = []; // {tournamentId, matchRef, label}
+    const finaleMatches = []; // {tournamentId, matchRef, kind, label}
+    
     tournaments.forEach((t) => {
-      const matchList = [];
       if (t.phase === 'poules' || t.phase === 'knockout') {
         (t.matches || []).forEach((m) => {
-          matchList.push({
-            sourceId: m.id, tournamentId: t.id, kind: 'poule',
+          pouleMatches.push({
+            tournamentId: t.id,
+            matchRef: m,
             label: labelForPouleMatch(t, m),
           });
         });
@@ -766,9 +767,12 @@ class Store {
                            : (fromEnd === 2) ? 'Demi-finale'
                            : 'Finale';
           round.forEach((m) => {
-            matchList.push({
-              sourceId: m.id, tournamentId: t.id, kind: 'bracket-placeholder',
+            finaleMatches.push({
+              tournamentId: t.id,
+              matchRef: m,
+              kind: 'bracket-placeholder',
               label: `${roundLabel} - ${t.name}`,
+              roundOrder: rIdx,
             });
           });
         });
@@ -781,35 +785,105 @@ class Store {
             const roundLabel = (fromEnd === 2) ? 'Demi-finale Consolante'
                              : 'Finale Consolante';
             round.forEach((m) => {
-              matchList.push({
-                sourceId: m.id, tournamentId: t.id, kind: 'bracket-placeholder',
+              finaleMatches.push({
+                tournamentId: t.id,
+                matchRef: m,
+                kind: 'bracket-placeholder',
                 label: `${roundLabel} - ${t.name}`,
+                roundOrder: rIdx + 100, // après les phases or
               });
             });
           });
           if (t.brackets.thirdPlace) {
-            matchList.push({
-              sourceId: t.brackets.thirdPlace.id, tournamentId: t.id, kind: 'bracket-placeholder',
+            finaleMatches.push({
+              tournamentId: t.id,
+              matchRef: t.brackets.thirdPlace,
+              kind: 'bracket-placeholder',
               label: `Petite finale - ${t.name}`,
+              roundOrder: 200,
             });
           }
         }
       }
+    });
 
-      matchList.forEach((m, idx) => {
-        const day = days.length === 1 ? days[0] : days[idx % days.length];
-        const terrain = (idx % cfg.terrains) + 1;
-        const startMin = dayNext.get(day) || parseTimeToMin(cfg.startTime);
+    // Étape 2: placement sur la grille
+    // Utiliser un système de "slots" par jour et par terrain
+    // Pour chaque jour, on maintient l'heure de fin d'utilisation de chaque terrain
+    const dayTerrainEnd = new Map(); // key: "day|terrain" -> endMin
+    days.forEach((d) => {
+      for (let t = 1; t <= cfg.terrains; t++) {
+        dayTerrainEnd.set(`${d}|${t}`, parseTimeToMin(cfg.startTime));
+      }
+    });
+
+    // Trouve le terrain le plus tôt disponible pour un jour donné
+    function findEarliestTerrain(day) {
+      let bestT = 1, bestMin = Infinity;
+      for (let t = 1; t <= cfg.terrains; t++) {
+        const end = dayTerrainEnd.get(`${day}|${t}`) ?? parseTimeToMin(cfg.startTime);
+        if (end < bestMin) { bestMin = end; bestT = t; }
+      }
+      return { terrain: bestT, startMin: bestMin };
+    }
+
+    // Placement des matchs de poule: on alterne entre les tournois pour l'équité
+    // On groupe les matchs par tournoi, puis on prend un match de chaque tournoi à tour de rôle
+    const pouleByTournament = new Map();
+    pouleMatches.forEach((pm) => {
+      if (!pouleByTournament.has(pm.tournamentId)) pouleByTournament.set(pm.tournamentId, []);
+      pouleByTournament.get(pm.tournamentId).push(pm);
+    });
+
+    // Round-robin: prendre un match de chaque tournoi à tour de rôle
+    let placed = true;
+    while (placed) {
+      placed = false;
+      for (const [tid, list] of pouleByTournament) {
+        if (!list.length) continue;
+        const pm = list.shift();
+        const day = days.length === 1 ? days[0] : days[Math.floor(allItems.length / (cfg.terrains * 6)) % days.length];
+        const slot = findEarliestTerrain(day);
         allItems.push({
-          ...m,
+          ...pm,
+          sourceId: pm.matchRef.id,
+          tournamentId: pm.tournamentId,
+          kind: 'poule',
+          label: pm.label,
           day,
-          terrain,
-          startMin,
+          terrain: slot.terrain,
+          startMin: slot.startMin,
           durationMin: cfg.matchDuration,
         });
-        dayNext.set(day, startMin + cfg.matchDuration + cfg.breakDuration);
+        const newEnd = slot.startMin + cfg.matchDuration + cfg.breakDuration;
+        dayTerrainEnd.set(`${day}|${slot.terrain}`, newEnd);
+        placed = true;
+      }
+    }
+
+    // Placement des phases finales: APRES toutes les poules
+    // Trouver l'heure de fin maximum des poules pour chaque jour
+    if (finaleMatches.length) {
+      // Trier par roundOrder (8e avant quarts avant demis avant finale)
+      finaleMatches.sort((a, b) => (a.roundOrder || 0) - (b.roundOrder || 0));
+      
+      finaleMatches.forEach((fm) => {
+        const day = days.length === 1 ? days[0] : days[days.length - 1];
+        const slot = findEarliestTerrain(day);
+        allItems.push({
+          sourceId: fm.matchRef.id,
+          tournamentId: fm.tournamentId,
+          kind: fm.kind,
+          label: fm.label,
+          day,
+          terrain: slot.terrain,
+          startMin: slot.startMin,
+          durationMin: cfg.matchDuration,
+        });
+        const newEnd = slot.startMin + cfg.matchDuration + cfg.breakDuration;
+        dayTerrainEnd.set(`${day}|${slot.terrain}`, newEnd);
       });
-    });
+    }
 
     this.resetPlanning();
     this.addPlanningItems(allItems);
