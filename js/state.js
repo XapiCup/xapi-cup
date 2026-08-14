@@ -655,24 +655,24 @@ class Store {
     this._save(); this._notify();
   }
 
-  // Recalcule les labels des matchs de phase finale en fonction des résultats
+  // Recalcule les labels des matchs de phase finale + ajoute les nouveaux matchs
   refreshPlanningLabels() {
     const p = this.state.planning;
+    if (!p.matches.length) return 0;
+
+    // 1. Mettre à jour les labels des matchs existants dont le sourceId est retrouvable
     let changed = 0;
     p.matches.forEach((m) => {
       if (m.kind !== 'bracket-placeholder') return;
       const t = this.state.tournaments.find((t) => t.id === m.tournamentId);
       if (!t) return;
-      // Retrouver le match de bracket correspondant
       const allBracketMatches = [];
       if (t.brackets?.gold?.rounds) t.brackets.gold.rounds.forEach(r => r.forEach(m2 => allBracketMatches.push(m2)));
       if (t.brackets?.silver?.rounds) t.brackets.silver.rounds.forEach(r => r.forEach(m2 => allBracketMatches.push(m2)));
       if (t.brackets?.thirdPlace) allBracketMatches.push(t.brackets.thirdPlace);
-
       const matchRef = allBracketMatches.find((bm) => bm.id === m.sourceId);
       if (!matchRef) return;
 
-      // Déterminer le roundLabel
       const totalRounds = (t.brackets?.gold?.rounds || []).length;
       let roundLabel = 'Phase finale';
       if (t.brackets?.gold?.rounds) {
@@ -704,6 +704,103 @@ class Store {
         changed++;
       }
     });
+
+    // 2. Ajouter les NOUVEAUX matchs de phase finale qui ne sont pas encore dans le planning
+    // (par exemple si un nouveau tournoi est passé en knockout)
+    const existingSourceIds = new Set(p.matches.filter(m => m.kind === 'bracket-placeholder').map(m => m.sourceId));
+    const cfg = p.config;
+    const days = cfg.days || [];
+    if (!days.length) {
+      if (changed) { this._save(); this._notify(); }
+      return changed;
+    }
+
+    const dayTerrainEnd = new Map();
+    days.forEach((d) => {
+      for (let t = 1; t <= cfg.terrains; t++) {
+        dayTerrainEnd.set(`${d}|${t}`, parseTimeToMin(cfg.startTime));
+      }
+    });
+    // Prendre en compte les matchs déjà placés
+    p.matches.forEach((m) => {
+      if (m.day != null && m.terrain != null && m.startMin != null) {
+        const end = m.startMin + (m.durationMin || cfg.matchDuration) + cfg.breakDuration;
+        const key = `${m.day}|${m.terrain}`;
+        const current = dayTerrainEnd.get(key) || 0;
+        if (end > current) dayTerrainEnd.set(key, end);
+      }
+    });
+
+    function findEarliestTerrain(day) {
+      let bestT = 1, bestMin = Infinity;
+      for (let t = 1; t <= cfg.terrains; t++) {
+        const end = dayTerrainEnd.get(`${day}|${t}`) ?? parseTimeToMin(cfg.startTime);
+        if (end < bestMin) { bestMin = end; bestT = t; }
+      }
+      return { terrain: bestT, startMin: bestMin };
+    }
+
+    const newFinals = [];
+    this.state.tournaments.forEach((t) => {
+      if (t.archived) return;
+      if (t.phase !== 'knockout' || !t.brackets?.gold) return;
+      const gold = t.brackets.gold;
+      const rounds = gold.rounds || [];
+      const totalRounds = rounds.length;
+      rounds.forEach((round, rIdx) => {
+        const fromEnd = totalRounds - rIdx;
+        const roundLabel = (fromEnd === 4) ? '8e de finale'
+                         : (fromEnd === 3) ? 'Quart de finale'
+                         : (fromEnd === 2) ? 'Demi-finale'
+                         : 'Finale';
+        round.forEach((m) => {
+          if (existingSourceIds.has(m.id)) return; // déjà dans le planning
+          newFinals.push({ tournamentId: t.id, matchRef: m, kind: 'bracket-placeholder', label: labelForBracketMatch(t, m, roundLabel), roundOrder: rIdx });
+        });
+      });
+      if (t.brackets.silver) {
+        const silver = t.brackets.silver;
+        const sRounds = silver.rounds || [];
+        const sTotal = sRounds.length;
+        sRounds.forEach((round, rIdx) => {
+          const fromEnd = sTotal - rIdx;
+          const roundLabel = (fromEnd === 2) ? 'Demi-finale Consolante' : 'Finale Consolante';
+          round.forEach((m) => {
+            if (existingSourceIds.has(m.id)) return;
+            newFinals.push({ tournamentId: t.id, matchRef: m, kind: 'bracket-placeholder', label: labelForBracketMatch(t, m, roundLabel), roundOrder: rIdx + 100 });
+          });
+        });
+        if (t.brackets.thirdPlace) {
+          if (!existingSourceIds.has(t.brackets.thirdPlace.id)) {
+            newFinals.push({ tournamentId: t.id, matchRef: t.brackets.thirdPlace, kind: 'bracket-placeholder', label: labelForBracketMatch(t, t.brackets.thirdPlace, 'Petite finale'), roundOrder: 200 });
+          }
+        }
+      }
+    });
+
+    if (newFinals.length) {
+      newFinals.sort((a, b) => (a.roundOrder || 0) - (b.roundOrder || 0));
+      // Placer sur le dernier jour
+      const lastDay = days[days.length - 1];
+      newFinals.forEach((fm) => {
+        const slot = findEarliestTerrain(lastDay);
+        p.matches.push({
+          id: 'pm_' + Math.random().toString(36).slice(2, 10),
+          sourceId: fm.matchRef.id,
+          tournamentId: fm.tournamentId,
+          kind: fm.kind,
+          label: fm.label,
+          day: lastDay,
+          terrain: slot.terrain,
+          startMin: slot.startMin,
+          durationMin: cfg.matchDuration,
+        });
+        const newEnd = slot.startMin + cfg.matchDuration + cfg.breakDuration;
+        dayTerrainEnd.set(`${lastDay}|${slot.terrain}`, newEnd);
+        changed++;
+      });
+    }
+
     if (changed) {
       this._save(); this._notify();
     }
