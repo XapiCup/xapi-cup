@@ -1405,14 +1405,18 @@ function renderPlanning() {
 
 function collectPlanningConfig() {
   const lunchEnabled = $('#plan-lunch-enabled').checked;
+  const matchDuration = parseInt($('#plan-match-duration').value, 10) || 20;
+  const breakDuration = parseInt($('#plan-break-duration').value, 10) || 0;
+  const slotDuration = matchDuration + breakDuration;
+  const lunchSlots = parseInt($('#plan-lunch-duration').value, 10) || 2;
   return {
     terrains: parseInt($('#plan-terrains').value, 10) || 2,
     startTime: $('#plan-start-time').value || '09:00',
-    matchDuration: parseInt($('#plan-match-duration').value, 10) || 20,
-    breakDuration: parseInt($('#plan-break-duration').value, 10) || 0,
+    matchDuration,
+    breakDuration,
     lunchBreak: lunchEnabled ? {
       startTime: $('#plan-lunch-start').value || '12:00',
-      durationMin: parseInt($('#plan-lunch-duration').value, 10) || 60,
+      durationMin: lunchSlots * slotDuration, // nb de créneaux × durée d'un créneau
     } : null,
   };
 }
@@ -1431,101 +1435,117 @@ function renderPlanningGrid() {
   }
 
   const terrains = cfg.terrains;
-  const STEP = 10; // pas de 10 minutes
+  // Un créneau = durée match + pause entre matchs (pas de cases grisées)
+  const SLOT = cfg.matchDuration + cfg.breakDuration;
 
-  // Calculer la plage horaire globale (commune à tous les jours)
+  // Plage horaire
   const allStart = p.matches.map((m) => m.startMin).filter((x) => x != null);
   const allEnd = p.matches.map((m) => (m.startMin || 0) + m.durationMin);
   const allBreakEnds = (p.breaks || []).map((b) => (b.startMin || 0) + b.durationMin);
-  const allMin = [...allStart, ...allEnd, ...allBreakEnds];
-  const minStart = allMin.length ? Math.min(...allStart) : parseTimeToMin(cfg.startTime);
-  const maxEnd = allMin.length ? Math.max(...allEnd, ...allBreakEnds) : minStart + 240;
-  const startMin = Math.floor(minStart / STEP) * STEP;
-  const endMin = Math.ceil(maxEnd / STEP) * STEP + STEP;
-  const totalRows = Math.round((endMin - startMin) / STEP);
+  const minStart = allStart.length ? Math.min(...allStart) : parseTimeToMin(cfg.startTime);
+  const maxEnd = allEnd.length ? Math.max(...allEnd, ...allBreakEnds) : minStart + SLOT * 6;
+  const startMin = Math.floor(minStart / SLOT) * SLOT;
+  const endMin = Math.ceil(maxEnd / SLOT) * SLOT;
+  const totalSlots = Math.round((endMin - startMin) / SLOT);
 
-  // Rendre un jour à la fois (empilés verticalement)
+  // Heure de fin globale (dernier match tous jours confondus)
+  const globalEnd = allEnd.length ? Math.max(...allEnd) : null;
+
+  // Rendre un jour à la fois
   days.forEach((d) => {
-    // Bloc jour : en-tête + grille
     const dayBlock = el('div', { class: 'planning-day-block' });
 
-    // En-tête du jour
+    // En-tête du jour avec heure de fin
+    const dayMatches = p.matches.filter((m) => m.day === d && m.startMin != null);
+    const dayEnd = dayMatches.length ? Math.max(...dayMatches.map((m) => m.startMin + m.durationMin)) : null;
+    const headerText = dayEnd
+      ? `📅 ${prettyDayFull(d)} — ${formatMinToTime(parseTimeToMin(cfg.startTime))} → ${formatMinToTime(dayEnd)}`
+      : `📅 ${prettyDayFull(d)}`;
     dayBlock.appendChild(el('div', { class: 'planning-day-header' },
-      el('span', { style: { fontSize: '1.1rem', fontWeight: '700' } }, `📅 ${prettyDayFull(d)}`)));
+      el('span', { style: { fontSize: '1.1rem', fontWeight: '700' } }, headerText)));
 
-    // Grille du jour : 1 colonne heure + N colonnes terrains
+    // Grille : 1 colonne heure + N colonnes terrains
     const dayGrid = el('div', { class: 'planning-day-grid' });
     dayGrid.style.gridTemplateColumns = `70px repeat(${terrains}, minmax(130px, 1fr))`;
-    dayGrid.style.gridAutoRows = '32px';
+    dayGrid.style.gridAutoRows = '44px';
 
-    // En-têtes terrains (ligne 1)
-    dayGrid.appendChild(el('div', { class: 'planning-grid-header' }, 'Heure'));
+    // En-têtes (ligne 1) — positionnés explicitement
+    const headerTime = el('div', { class: 'planning-grid-header' }, 'Heure');
+    headerTime.style.gridColumn = '1';
+    headerTime.style.gridRow = '1';
+    dayGrid.appendChild(headerTime);
     for (let t = 1; t <= terrains; t++) {
-      dayGrid.appendChild(el('div', { class: 'planning-grid-header' },
-        el('div', {}, `Terrain ${t}`)));
+      const h = el('div', { class: 'planning-grid-header' },
+        el('div', {}, `Terrain ${t}`));
+      h.style.gridColumn = `${t + 1}`;
+      h.style.gridRow = '1';
+      dayGrid.appendChild(h);
     }
 
     // Indexer les matchs et pauses placés pour ce jour
-    const placedHere = new Map(); // key: "terrain|row" -> {type, data, rowSpan}
+    const placedHere = new Map();
     p.matches.forEach((m) => {
       if (m.day !== d || m.terrain == null || m.startMin == null) return;
-      const terrainIdx = m.terrain - 1;
-      if (terrainIdx < 0 || terrainIdx >= terrains) return;
-      const rowOffset = Math.round((m.startMin - startMin) / STEP);
-      const rowSpan = Math.max(1, Math.round(m.durationMin / STEP));
-      for (let r = 0; r < rowSpan; r++) {
-        placedHere.set(`${m.terrain}|${rowOffset + r}`, { type: 'match', data: m, isStart: r === 0, rowSpan });
+      const slotIdx = Math.round((m.startMin - startMin) / SLOT);
+      const slotCount = Math.max(1, Math.round(m.durationMin / SLOT));
+      for (let r = 0; r < slotCount; r++) {
+        placedHere.set(`${m.terrain}|${slotIdx + r}`, { type: 'match', data: m, isStart: r === 0, slotCount });
       }
     });
     (p.breaks || []).forEach((b) => {
       if (b.day !== d || b.terrain == null || b.startMin == null) return;
-      const terrainIdx = b.terrain - 1;
-      if (terrainIdx < 0 || terrainIdx >= terrains) return;
-      const rowOffset = Math.round((b.startMin - startMin) / STEP);
-      const rowSpan = Math.max(1, Math.round(b.durationMin / STEP));
-      for (let r = 0; r < rowSpan; r++) {
-        placedHere.set(`${b.terrain}|${rowOffset + r}`, { type: 'break', data: b, isStart: r === 0, rowSpan });
+      const slotIdx = Math.round((b.startMin - startMin) / SLOT);
+      const slotCount = Math.max(1, Math.round(b.durationMin / SLOT));
+      for (let r = 0; r < slotCount; r++) {
+        placedHere.set(`${b.terrain}|${slotIdx + r}`, { type: 'break', data: b, isStart: r === 0, slotCount });
       }
     });
 
-    // Cellules
-    for (let row = 0; row < totalRows; row++) {
-      const mins = startMin + (row * STEP);
+    // Cellules par créneau (slot)
+    for (let slot = 0; slot < totalSlots; slot++) {
+      const mins = startMin + (slot * SLOT);
+      const rowIdx = slot + 2; // ligne 1 = header, lignes 2+ = créneaux
+      const timeLabel = formatMinToTime(mins);
+
       // Colonne heure
-      dayGrid.appendChild(el('div', { class: 'planning-grid-time' },
-        (mins % 60 === 0) ? formatMinToTime(mins) : ''));
+      const timeCell = el('div', { class: 'planning-grid-time' }, timeLabel);
+      timeCell.style.gridColumn = '1';
+      timeCell.style.gridRow = `${rowIdx}`;
+      dayGrid.appendChild(timeCell);
 
       // Cellules par terrain
       for (let t = 1; t <= terrains; t++) {
-        const key = `${t}|${row}`;
+        const key = `${t}|${slot}`;
         const placed = placedHere.get(key);
+        const colIdx = t + 1; // colonne 1 = heure, colonnes 2+ = terrains
 
         if (placed && placed.isStart && placed.type === 'match') {
-          // Match placé DANS la cellule
           const cell = el('div', {
             class: 'planning-grid-cell has-match',
             'data-day': d, 'data-terrain': t, 'data-start': mins,
           });
+          cell.style.gridColumn = `${colIdx}`;
+          cell.style.gridRow = `${rowIdx} / span ${placed.slotCount}`;
+          cell.style.position = 'relative';
+          cell.style.overflow = 'hidden';
           const matchEl = buildPlanningMatchEl(placed.data);
           matchEl.style.position = 'absolute';
           matchEl.style.inset = '0';
           matchEl.style.zIndex = '2';
-          cell.style.position = 'relative';
-          cell.style.gridRow = `span ${placed.rowSpan}`;
           cell.appendChild(matchEl);
-          // Le drop se fait sur la cellule (le match a pointer-events:none pendant le drag)
           attachCellDropHandler(cell, d, t, mins);
           dayGrid.appendChild(cell);
         } else if (placed && placed.isStart && placed.type === 'break') {
-          // Pause DANS la cellule
           const cell = el('div', {
             class: 'planning-grid-cell has-break',
             'data-day': d, 'data-terrain': t, 'data-start': mins,
           });
+          cell.style.gridColumn = `${colIdx}`;
+          cell.style.gridRow = `${rowIdx} / span ${placed.slotCount}`;
           cell.style.position = 'relative';
-          cell.style.gridRow = `span ${placed.rowSpan}`;
+          cell.style.overflow = 'hidden';
           const breakEl = el('div', { class: 'planning-break', draggable: 'true' },
-            '🍽️ Pause', el('span', { class: 'muted', style: { fontSize: '0.7rem', marginLeft: 'auto' } }, formatMinToTime(placed.data.startMin)),
+            '🍽️ Pause déj', el('span', { class: 'muted', style: { fontSize: '0.7rem', marginLeft: 'auto' } }, formatMinToTime(placed.data.startMin)),
             el('button', { class: 'match-remove', title: 'Supprimer la pause', onclick: (e) => { e.stopPropagation(); store.removePlanningItem(placed.data.id); renderPlanning(); } }, 'x')
           );
           breakEl.style.position = 'absolute';
@@ -1540,14 +1560,19 @@ function renderPlanningGrid() {
           attachCellDropHandler(cell, d, t, mins);
           dayGrid.appendChild(cell);
         } else if (placed && !placed.isStart) {
-          // Cellule occupée par la continuation d'un match/pause (non interactive)
-          dayGrid.appendChild(el('div', { class: 'planning-grid-cell occupied' }));
+          // Continuation d'un match/pause (cellule cachée)
+          const cell = el('div', { class: 'planning-grid-cell occupied' });
+          cell.style.gridColumn = `${colIdx}`;
+          cell.style.gridRow = `${rowIdx}`;
+          dayGrid.appendChild(cell);
         } else {
-          // Cellule vide
+          // Cellule vide (créneau disponible)
           const cell = el('div', {
             class: 'planning-grid-cell',
             'data-day': d, 'data-terrain': t, 'data-start': mins,
           });
+          cell.style.gridColumn = `${colIdx}`;
+          cell.style.gridRow = `${rowIdx}`;
           attachCellDropHandler(cell, d, t, mins);
           dayGrid.appendChild(cell);
         }
@@ -1557,6 +1582,12 @@ function renderPlanningGrid() {
     dayBlock.appendChild(dayGrid);
     grid.appendChild(dayBlock);
   });
+
+  // Afficher l'heure de fin globale sous la grille
+  if (globalEnd != null) {
+    grid.appendChild(el('div', { class: 'planning-end-time', style: { textAlign: 'center', padding: '12px', fontWeight: '700', color: 'var(--color-primary)' } },
+      `🏆 Fin des tournois : ${formatMinToTime(globalEnd)}`));
+  }
 }
 
 function attachCellDropHandler(cell, day, terrain, startMin) {
