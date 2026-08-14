@@ -677,32 +677,24 @@ class Store {
       let roundLabel = 'Phase finale';
       if (t.brackets?.gold?.rounds) {
         for (let r = 0; r < t.brackets.gold.rounds.length; r++) {
-          const rLen = t.brackets.gold.rounds[r].length;
-          const mIdx = t.brackets.gold.rounds[r].findIndex((mm) => mm.id === matchRef.id);
-          if (mIdx >= 0) {
+          if (t.brackets.gold.rounds[r].some((mm) => mm.id === matchRef.id)) {
             const fromEnd = totalRounds - r;
-            const baseLabel = (fromEnd === 4) ? '8e de finale'
-                           : (fromEnd === 3) ? 'Quart de finale'
-                           : (fromEnd === 2) ? 'Demi-finale'
-                           : 'Finale';
-            const suffix = rLen > 1 ? ` ${mIdx + 1}` : '';
-            roundLabel = baseLabel + suffix;
+            roundLabel = (fromEnd === 4) ? '8e de finale'
+                       : (fromEnd === 3) ? 'Quart de finale'
+                       : (fromEnd === 2) ? 'Demi-finale'
+                       : 'Finale';
             break;
           }
         }
       }
       if (t.brackets?.silver?.rounds) {
         for (let r = 0; r < t.brackets.silver.rounds.length; r++) {
-          const rLen = t.brackets.silver.rounds[r].length;
-          const mIdx = t.brackets.silver.rounds[r].findIndex((mm) => mm.id === matchRef.id);
-          if (mIdx >= 0) {
+          if (t.brackets.silver.rounds[r].some((mm) => mm.id === matchRef.id)) {
             const fromEnd = t.brackets.silver.rounds.length - r;
-            const baseLabel = (fromEnd >= 4) ? '8e de finale Consolante'
-                             : (fromEnd === 3) ? 'Quart de finale Consolante'
-                             : (fromEnd === 2) ? 'Demi-finale Consolante'
-                             : 'Finale Consolante';
-            const suffix = rLen > 1 ? ` ${mIdx + 1}` : '';
-            roundLabel = baseLabel + suffix;
+            roundLabel = (fromEnd >= 4) ? '8e de finale Consolante'
+                         : (fromEnd === 3) ? 'Quart de finale Consolante'
+                         : (fromEnd === 2) ? 'Demi-finale Consolante'
+                         : 'Finale Consolante';
             break;
           }
         }
@@ -761,13 +753,12 @@ class Store {
       rounds.forEach((round, rIdx) => {
         const fromEnd = totalRounds - rIdx;
         const roundLabel = (fromEnd === 4) ? '8e de finale'
-                         : (fromEnd === 3) ? 'Quart de finale'
-                         : (fromEnd === 2) ? 'Demi-finale'
-                         : 'Finale';
-        round.forEach((m, mIdx) => {
+                       : (fromEnd === 3) ? 'Quart de finale'
+                       : (fromEnd === 2) ? 'Demi-finale'
+                       : 'Finale';
+        round.forEach((m) => {
           if (existingSourceIds.has(m.id)) return;
-          const suffix = round.length > 1 ? ` ${mIdx + 1}` : '';
-          newFinals.push({ tournamentId: t.id, matchRef: m, kind: 'bracket-placeholder', label: labelForBracketMatch(t, m, roundLabel + suffix), roundOrder: rIdx });
+          newFinals.push({ tournamentId: t.id, matchRef: m, kind: 'bracket-placeholder', label: labelForBracketMatch(t, m, roundLabel), roundOrder: rIdx });
         });
       });
       if (t.brackets.silver) {
@@ -780,10 +771,9 @@ class Store {
                            : (fromEnd === 3) ? 'Quart de finale Consolante'
                            : (fromEnd === 2) ? 'Demi-finale Consolante'
                            : 'Finale Consolante';
-          round.forEach((m, mIdx) => {
+          round.forEach((m) => {
             if (existingSourceIds.has(m.id)) return;
-            const suffix = round.length > 1 ? ` ${mIdx + 1}` : '';
-            newFinals.push({ tournamentId: t.id, matchRef: m, kind: 'bracket-placeholder', label: labelForBracketMatch(t, m, roundLabel + suffix), roundOrder: rIdx + 100 });
+            newFinals.push({ tournamentId: t.id, matchRef: m, kind: 'bracket-placeholder', label: labelForBracketMatch(t, m, roundLabel), roundOrder: rIdx + 100 });
           });
         });
         if (t.brackets.thirdPlace) {
@@ -935,13 +925,12 @@ class Store {
                            : (fromEnd === 3) ? 'Quart de finale'
                            : (fromEnd === 2) ? 'Demi-finale'
                            : 'Finale';
-          round.forEach((m, mIdx) => {
-            const suffix = round.length > 1 ? ` ${mIdx + 1}` : '';
+          round.forEach((m) => {
             finaleMatches.push({
               tournamentId: t.id,
               matchRef: m,
               kind: 'bracket-placeholder',
-              label: labelForBracketMatch(t, m, roundLabel + suffix),
+              label: labelForBracketMatch(t, m, roundLabel),
               roundOrder: rIdx,
             });
           });
@@ -956,13 +945,12 @@ class Store {
                              : (fromEnd === 3) ? 'Quart de finale Consolante'
                              : (fromEnd === 2) ? 'Demi-finale Consolante'
                              : 'Finale Consolante';
-            round.forEach((m, mIdx) => {
-              const suffix = round.length > 1 ? ` ${mIdx + 1}` : '';
+            round.forEach((m) => {
               finaleMatches.push({
                 tournamentId: t.id,
                 matchRef: m,
                 kind: 'bracket-placeholder',
-                label: labelForBracketMatch(t, m, roundLabel + suffix),
+                label: labelForBracketMatch(t, m, roundLabel),
                 roundOrder: rIdx + 100,
               });
             });
