@@ -655,6 +655,61 @@ class Store {
     this._save(); this._notify();
   }
 
+  // Recalcule les labels des matchs de phase finale en fonction des résultats
+  refreshPlanningLabels() {
+    const p = this.state.planning;
+    let changed = 0;
+    p.matches.forEach((m) => {
+      if (m.kind !== 'bracket-placeholder') return;
+      const t = this.state.tournaments.find((t) => t.id === m.tournamentId);
+      if (!t) return;
+      // Retrouver le match de bracket correspondant
+      const allBracketMatches = [];
+      if (t.brackets?.gold?.rounds) t.brackets.gold.rounds.forEach(r => r.forEach(m2 => allBracketMatches.push(m2)));
+      if (t.brackets?.silver?.rounds) t.brackets.silver.rounds.forEach(r => r.forEach(m2 => allBracketMatches.push(m2)));
+      if (t.brackets?.thirdPlace) allBracketMatches.push(t.brackets.thirdPlace);
+
+      const matchRef = allBracketMatches.find((bm) => bm.id === m.sourceId);
+      if (!matchRef) return;
+
+      // Déterminer le roundLabel
+      const totalRounds = (t.brackets?.gold?.rounds || []).length;
+      let roundLabel = 'Phase finale';
+      if (t.brackets?.gold?.rounds) {
+        for (let r = 0; r < t.brackets.gold.rounds.length; r++) {
+          if (t.brackets.gold.rounds[r].some((mm) => mm.id === matchRef.id)) {
+            const fromEnd = totalRounds - r;
+            roundLabel = (fromEnd === 4) ? '8e de finale'
+                       : (fromEnd === 3) ? 'Quart de finale'
+                       : (fromEnd === 2) ? 'Demi-finale'
+                       : 'Finale';
+            break;
+          }
+        }
+      }
+      if (t.brackets?.silver?.rounds) {
+        for (let r = 0; r < t.brackets.silver.rounds.length; r++) {
+          if (t.brackets.silver.rounds[r].some((mm) => mm.id === matchRef.id)) {
+            const fromEnd = t.brackets.silver.rounds.length - r;
+            roundLabel = (fromEnd === 2) ? 'Demi-finale Consolante' : 'Finale Consolante';
+            break;
+          }
+        }
+      }
+      if (t.brackets?.thirdPlace?.id === matchRef.id) roundLabel = 'Petite finale';
+
+      const newLabel = labelForBracketMatch(t, matchRef, roundLabel);
+      if (newLabel !== m.label) {
+        m.label = newLabel;
+        changed++;
+      }
+    });
+    if (changed) {
+      this._save(); this._notify();
+    }
+    return changed;
+  }
+
   addPlanningItems(items) {
     const created = [];
     const p = this.state.planning;
