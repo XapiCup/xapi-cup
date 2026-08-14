@@ -828,6 +828,18 @@ class Store {
       return { terrain: bestT, startMin: bestMin };
     }
 
+    // Vérifie si un jour est "plein" (tous les terrains ont dépassé une heure raisonnable, ex: 20:00)
+    const SLOT = cfg.matchDuration + cfg.breakDuration;
+    const MAX_HOUR = 20 * 60; // 20:00
+    function checkDayFull(day, nbTerrains, map, slotDur) {
+      let allLate = true;
+      for (let t = 1; t <= nbTerrains; t++) {
+        const end = map.get(`${day}|${t}`) ?? parseTimeToMin(cfg.startTime);
+        if (end + slotDur <= MAX_HOUR) { allLate = false; break; }
+      }
+      return allLate;
+    }
+
     // Placement des matchs de poule: on alterne entre les tournois pour l'équité
     // On groupe les matchs par tournoi, puis on prend un match de chaque tournoi à tour de rôle
     const pouleByTournament = new Map();
@@ -837,13 +849,23 @@ class Store {
     });
 
     // Round-robin: prendre un match de chaque tournoi à tour de rôle
+    // Priorité au premier jour: on remplit le jour 1 avant de passer au jour 2
     let placed = true;
+    let dayIdx = 0;
     while (placed) {
       placed = false;
       for (const [tid, list] of pouleByTournament) {
         if (!list.length) continue;
         const pm = list.shift();
-        const day = days.length === 1 ? days[0] : days[Math.floor(allItems.length / (cfg.terrains * 6)) % days.length];
+        // Priorité au premier jour: si le premier jour a encore de la place, on l'utilise
+        // On ne passe au jour suivant que si le jour actuel est "plein" (tous terrains occupés)
+        let day = days[dayIdx];
+        // Vérifier si le jour actuel est plein (tous terrains à la même heure max)
+        const dayFull = checkDayFull(day, cfg.terrains, dayTerrainEnd, SLOT);
+        if (dayFull && dayIdx < days.length - 1) {
+          dayIdx++;
+          day = days[dayIdx];
+        }
         const slot = findEarliestTerrain(day);
         allItems.push({
           ...pm,
