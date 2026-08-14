@@ -772,7 +772,7 @@ class Store {
               tournamentId: t.id,
               matchRef: m,
               kind: 'bracket-placeholder',
-              label: `${roundLabel} - ${t.name}`,
+              label: labelForBracketMatch(t, m, roundLabel),
               roundOrder: rIdx,
             });
           });
@@ -790,8 +790,8 @@ class Store {
                 tournamentId: t.id,
                 matchRef: m,
                 kind: 'bracket-placeholder',
-                label: `${roundLabel} - ${t.name}`,
-                roundOrder: rIdx + 100, // après les phases or
+                label: labelForBracketMatch(t, m, roundLabel),
+                roundOrder: rIdx + 100,
               });
             });
           });
@@ -800,7 +800,7 @@ class Store {
               tournamentId: t.id,
               matchRef: t.brackets.thirdPlace,
               kind: 'bracket-placeholder',
-              label: `Petite finale - ${t.name}`,
+              label: labelForBracketMatch(t, t.brackets.thirdPlace, 'Petite finale'),
               roundOrder: 200,
             });
           }
@@ -943,6 +943,33 @@ function labelForPouleMatch(t, m) {
   const tB = t.teams.find((x) => x.id === m.teamB);
   const pouleLabel = String.fromCharCode(65 + (m.pouleIdx || 0));
   return `${t.name} - Poule ${pouleLabel}: ${tA?.name || '?'} vs ${tB?.name || '?'}`;
+}
+
+function labelForBracketMatch(t, matchRef, roundLabel) {
+  // Si le match a des équipes définies (slotA/slotB), afficher les noms
+  const tA = matchRef.slotA ? t.teams.find((x) => x.id === matchRef.slotA) : null;
+  const tB = matchRef.slotB ? t.teams.find((x) => x.id === matchRef.slotB) : null;
+  const nameA = tA?.name || null;
+  const nameB = tB?.name || null;
+
+  if (matchRef.finished && matchRef.winnerSlot) {
+    // Match terminé : afficher le résultat
+    const winner = matchRef.winnerSlot === 'A' ? nameA : nameB;
+    const loser = matchRef.winnerSlot === 'A' ? nameB : nameA;
+    const scoreA = matchRef.scoreA ?? 0;
+    const scoreB = matchRef.scoreB ?? 0;
+    return `${roundLabel} - ${t.name}: ${winner} ${scoreA}-${scoreB} ${loser} ✓`;
+  } else if (nameA && nameB) {
+    // Match à venir avec équipes connues
+    return `${roundLabel} - ${t.name}: ${nameA} vs ${nameB}`;
+  } else if (nameA && !nameB) {
+    return `${roundLabel} - ${t.name}: ${nameA} vs (à déterminer)`;
+  } else if (!nameA && nameB) {
+    return `${roundLabel} - ${t.name}: (à déterminer) vs ${nameB}`;
+  } else {
+    // Équipes pas encore déterminées
+    return `${roundLabel} - ${t.name} (qualifiés à déterminer)`;
+  }
 }
 
 // ---------- History entry ----------
