@@ -1441,8 +1441,9 @@ function renderPlanningGrid() {
   const totalRows = Math.round((endMin - startMin) / STEP);
   const totalCols = 1 + (terrains * days.length);
 
-  grid.style.gridTemplateColumns = `70px repeat(${terrains * days.length}, minmax(120px, 1fr))`;
+  grid.style.gridTemplateColumns = `70px repeat(${terrains * days.length}, minmax(120px, 160px))`;
   grid.style.gridAutoRows = '32px';
+  grid.style.minWidth = `${70 + terrains * days.length * 125}px`;
 
   // En-têtes (ligne 1)
   grid.appendChild(el('div', { class: 'planning-grid-header' }, 'Heure'));
@@ -1525,7 +1526,7 @@ function renderPlanningGrid() {
     const rowSpan = Math.max(1, Math.round(b.durationMin / STEP));
     const breakEl = el('div', { class: 'planning-break', draggable: 'true' },
       '🍽️ Pause', el('span', { class: 'muted', style: { fontSize: '0.7rem', marginLeft: 'auto' } }, formatMinToTime(b.startMin)),
-      el('button', { class: 'match-remove', onclick: (e) => { e.stopPropagation(); store.removePlanningItem(b.id); renderPlanning(); } }, 'x')
+      el('button', { class: 'match-remove', title: 'Supprimer la pause', onclick: (e) => { e.stopPropagation(); store.removePlanningItem(b.id); renderPlanning(); } }, 'x')
     );
     breakEl.style.gridColumn = `${col + 1} / span 1`;
     breakEl.style.gridRow = `${rowOffset + 2} / span ${rowSpan}`;
@@ -1545,19 +1546,26 @@ function buildPlanningMatchEl(m) {
   },
     el('span', { class: 'match-time' }, formatMinToTime(m.startMin)),
     el('span', { class: 'match-label', title: m.label }, m.label),
-    el('button', { class: 'match-remove', onclick: (e) => {
+    el('button', { class: 'match-remove', title: 'Remettre dans la sidebar', onclick: (e) => {
       e.stopPropagation();
-      store.removePlanningItem(m.id);
+      store.unplacePlanningItem(m.id);
       renderPlanning();
-    } }, 'x')
+      toast('Match remis dans la sidebar.');
+    } }, '↩')
   );
   matchEl.addEventListener('dragstart', (e) => {
     planningDragData = { itemId: m.id };
     e.dataTransfer.setData('text/plain', m.id);
     e.dataTransfer.effectAllowed = 'move';
     matchEl.classList.add('dragging');
+    const grid = $('#planning-grid');
+    if (grid) grid.classList.add('dragging-active');
   });
-  matchEl.addEventListener('dragend', () => matchEl.classList.remove('dragging'));
+  matchEl.addEventListener('dragend', () => {
+    matchEl.classList.remove('dragging');
+    const grid = $('#planning-grid');
+    if (grid) grid.classList.remove('dragging-active');
+  });
   return matchEl;
 }
 
