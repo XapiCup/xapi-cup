@@ -1505,7 +1505,7 @@ function renderPlanningGrid() {
     // Grille : 1 colonne heure + N colonnes terrains
     const dayGrid = el('div', { class: 'planning-day-grid' });
     dayGrid.style.gridTemplateColumns = `70px repeat(${terrains}, minmax(130px, 1fr))`;
-    dayGrid.style.gridAutoRows = '44px';
+    dayGrid.style.gridAutoRows = '56px';
 
     // En-têtes (ligne 1) — positionnés explicitement
     const headerTime = el('div', { class: 'planning-grid-header' }, 'Heure');
