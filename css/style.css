@@ -1870,8 +1870,8 @@ a:hover { text-decoration: underline; }
   border-left-color: #8a6700;
   font-style: italic;
 }
-.planning-match.dragging { opacity: 0.4; pointer-events: none; }
-/* Pendant un drag, les matchs placés laissent passer les events vers les cellules */
+.planning-match.dragging { opacity: 0.4; }
+/* Pendant un drag, les AUTRES matchs laissent passer les events vers les cellules */
 .planning-day-grid.dragging-active .planning-match:not(.dragging) {
   pointer-events: none;
 }
