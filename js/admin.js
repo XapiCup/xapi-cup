@@ -1727,6 +1727,15 @@ function bindPlanningUI() {
     toast(`Planning genere : ${res.added} matchs sur ${res.days.length} jour(s).`);
     renderPlanning();
   });
+  $('#plan-refresh-btn')?.addEventListener('click', () => {
+    const changed = store.refreshPlanningLabels();
+    if (changed > 0) {
+      toast(`✅ ${changed} libellé(s) mis à jour.`);
+      renderPlanning();
+    } else {
+      toast('Aucun libellé à mettre à jour.', 'info');
+    }
+  });
   $('#plan-reset-btn')?.addEventListener('click', () => {
     if (!confirm('Vider le planning actuel ?')) return;
     store.resetPlanning();
