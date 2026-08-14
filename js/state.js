@@ -747,7 +747,8 @@ class Store {
     const finaleMatches = []; // {tournamentId, matchRef, kind, label}
     
     tournaments.forEach((t) => {
-      if (t.phase === 'poules' || t.phase === 'knockout') {
+      // Inclure les matchs de poule si les poules ont été générées
+      if ((t.phase === 'poules' || t.phase === 'knockout' || t.phase === 'finished-pool' || (t.phase === 'setup' && (t.matches || []).length > 0))) {
         (t.matches || []).forEach((m) => {
           pouleMatches.push({
             tournamentId: t.id,
@@ -895,10 +896,13 @@ class Store {
         .filter((m) => m.startMin >= lunchStart)
         .forEach((m) => { m.startMin += lunchDur; });
       this._save(); this._notify();
+      // Pause déjeuner sur TOUS les terrains, pas juste le terrain 1
       days.forEach((d) => {
-        this.addPlanningBreak({
-          day: d, terrain: 1, startMin: lunchStart, durationMin: lunchDur, kind: 'lunch',
-        });
+        for (let t = 1; t <= cfg.terrains; t++) {
+          this.addPlanningBreak({
+            day: d, terrain: t, startMin: lunchStart, durationMin: lunchDur, kind: 'lunch',
+          });
+        }
       });
     }
 
