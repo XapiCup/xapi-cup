@@ -1796,16 +1796,16 @@ a:hover { text-decoration: underline; }
   flex-direction: column;
   gap: 24px;
   min-height: 400px;
-  max-height: 75vh;
+  max-height: 80vh;
   overflow-y: auto;
-  overflow-x: auto;
+  overflow-x: hidden;
   padding: 12px;
 }
 
 .planning-day-block {
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .planning-day-header {
@@ -1813,13 +1813,13 @@ a:hover { text-decoration: underline; }
   color: white;
   padding: 10px 16px;
   font-weight: 700;
+  border-radius: 8px 8px 0 0;
 }
 
 .planning-day-grid {
   display: grid;
   gap: 1px;
   background: var(--color-border);
-  border-top: 1px solid var(--color-border);
 }
 .planning-grid-header {
   background: var(--color-surface-2);
@@ -1877,6 +1877,21 @@ a:hover { text-decoration: underline; }
 }
 .planning-day-grid.dragging-active .planning-break:not(.dragging) {
   pointer-events: none;
+}
+/* Match placé dans une cellule */
+.planning-grid-cell.has-match {
+  background: transparent;
+  padding: 0;
+  overflow: hidden;
+}
+.planning-grid-cell.has-break {
+  background: transparent;
+  padding: 0;
+  overflow: hidden;
+}
+.planning-grid-cell.occupied {
+  background: var(--color-surface);
+  visibility: hidden;
 }
 .planning-match .match-time {
   font-weight: 700;
