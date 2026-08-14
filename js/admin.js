@@ -1431,38 +1431,49 @@ function renderPlanningGrid() {
   }
 
   const terrains = cfg.terrains;
+  const STEP = 10; // pas de 10 minutes
+
+  // Calculer la plage horaire globale (commune à tous les jours)
   const allStart = p.matches.map((m) => m.startMin).filter((x) => x != null);
   const allEnd = p.matches.map((m) => (m.startMin || 0) + m.durationMin);
-  const minStart = allStart.length ? Math.min(...allStart) : parseTimeToMin(cfg.startTime);
-  const maxEnd = allStart.length ? Math.max(...allEnd) : minStart + 240;
-  const STEP = 10; // pas de 10 minutes
+  const allBreakEnds = (p.breaks || []).map((b) => (b.startMin || 0) + b.durationMin);
+  const allMin = [...allStart, ...allEnd, ...allBreakEnds];
+  const minStart = allMin.length ? Math.min(...allStart) : parseTimeToMin(cfg.startTime);
+  const maxEnd = allMin.length ? Math.max(...allEnd, ...allBreakEnds) : minStart + 240;
   const startMin = Math.floor(minStart / STEP) * STEP;
   const endMin = Math.ceil(maxEnd / STEP) * STEP + STEP;
   const totalRows = Math.round((endMin - startMin) / STEP);
-  const totalCols = 1 + (terrains * days.length);
 
-  grid.style.gridTemplateColumns = `70px repeat(${terrains * days.length}, minmax(120px, 160px))`;
-  grid.style.gridAutoRows = '32px';
-  grid.style.minWidth = `${70 + terrains * days.length * 125}px`;
-
-  // En-têtes (ligne 1)
-  grid.appendChild(el('div', { class: 'planning-grid-header' }, 'Heure'));
+  // Rendre un jour à la fois (empilés verticalement)
   days.forEach((d) => {
+    // Bloc jour : en-tête + grille
+    const dayBlock = el('div', { class: 'planning-day-block' });
+
+    // En-tête du jour
+    dayBlock.appendChild(el('div', { class: 'planning-day-header' },
+      el('span', { style: { fontSize: '1.1rem', fontWeight: '700' } }, `📅 ${prettyDayFull(d)}`)));
+
+    // Grille du jour : 1 colonne heure + N colonnes terrains
+    const dayGrid = el('div', { class: 'planning-day-grid' });
+    dayGrid.style.gridTemplateColumns = `70px repeat(${terrains}, minmax(130px, 1fr))`;
+    dayGrid.style.gridAutoRows = '32px';
+    dayGrid.style.position = 'relative';
+
+    // En-têtes terrains (ligne 1)
+    dayGrid.appendChild(el('div', { class: 'planning-grid-header' }, 'Heure'));
     for (let t = 1; t <= terrains; t++) {
-      grid.appendChild(el('div', { class: 'planning-grid-header' },
-        el('div', {}, prettyDay(d)),
-        el('div', { class: 'muted', style: { fontSize: '0.7rem' } }, `Terrain ${t}`)));
+      dayGrid.appendChild(el('div', { class: 'planning-grid-header' },
+        el('div', {}, `Terrain ${t}`)));
     }
-  });
 
-  // Cellules (une ligne par pas de 10 min)
-  for (let row = 0; row < totalRows; row++) {
-    const mins = startMin + (row * STEP);
-    // Colonne heure (affichée seulement sur les heures pleines)
-    grid.appendChild(el('div', { class: 'planning-grid-time' },
-      (mins % 60 === 0) ? formatMinToTime(mins) : ''));
+    // Cellules vides (pour le drag&drop)
+    for (let row = 0; row < totalRows; row++) {
+      const mins = startMin + (row * STEP);
+      // Colonne heure
+      dayGrid.appendChild(el('div', { class: 'planning-grid-time' },
+        (mins % 60 === 0) ? formatMinToTime(mins) : ''));
 
-    days.forEach((d) => {
+      // Cellules par terrain
       for (let t = 1; t <= terrains; t++) {
         const cell = el('div', {
           class: 'planning-grid-cell',
@@ -1470,72 +1481,75 @@ function renderPlanningGrid() {
           'data-terrain': t,
           'data-start': mins,
         });
-        cell.addEventListener('dragover', (e) => {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = 'move';
-          cell.classList.add('drag-over');
-        });
-        cell.addEventListener('dragleave', () => cell.classList.remove('drag-over'));
-        cell.addEventListener('drop', (e) => {
-          e.preventDefault();
-          cell.classList.remove('drag-over');
-          if (!planningDragData) return;
-          const itemId = planningDragData.itemId;
-          const target = {
-            day: cell.dataset.day,
-            terrain: parseInt(cell.dataset.terrain, 10),
-            startMin: parseInt(cell.dataset.start, 10),
-          };
-          const collision = store.movePlanningItem(itemId, target);
-          if (collision) {
-            store.unplacePlanningItem(itemId);
-            toast('Créneau occupé, match remis dans la sidebar.', 'warn');
-          } else {
-            toast('Match positionné ✓');
-          }
-          planningDragData = null;
-          renderPlanning();
-        });
-        grid.appendChild(cell);
+        attachCellDropHandler(cell, d, t, mins);
+        dayGrid.appendChild(cell);
       }
-    });
-  }
+    }
 
-  // Matchs placés (positionnés par gridColumn/gridRow, alignés sur le pas de 10 min)
-  p.matches.forEach((m) => {
-    if (m.day == null || m.terrain == null || m.startMin == null) return;
-    const terrainIdx = m.terrain - 1;
-    const dayIdx = days.indexOf(m.day);
-    if (terrainIdx < 0 || dayIdx < 0) return;
-    const col = 1 + (dayIdx * terrains) + terrainIdx; // 0-indexed (0 = heure)
-    const rowOffset = Math.round((m.startMin - startMin) / STEP);
-    const rowSpan = Math.max(1, Math.round(m.durationMin / STEP));
-    const matchEl = buildPlanningMatchEl(m);
-    matchEl.style.gridColumn = `${col + 1} / span 1`;  // +1 car grid est 1-indexed
-    matchEl.style.gridRow = `${rowOffset + 2} / span ${rowSpan}`;  // +2 (ligne 1 = header)
-    grid.appendChild(matchEl);
+    // Matchs placés (directement dans la dayGrid, par-dessus les cellules)
+    p.matches.forEach((m) => {
+      if (m.day !== d) return;
+      if (m.terrain == null || m.startMin == null) return;
+      const terrainIdx = m.terrain - 1;
+      if (terrainIdx < 0 || terrainIdx >= terrains) return;
+      const rowOffset = Math.round((m.startMin - startMin) / STEP);
+      const rowSpan = Math.max(1, Math.round(m.durationMin / STEP));
+      const matchEl = buildPlanningMatchEl(m);
+      matchEl.style.gridColumn = `${terrainIdx + 2} / span 1`; // +2 car colonne 1 = heure, et grid est 1-indexed
+      matchEl.style.gridRow = `${rowOffset + 2} / span ${rowSpan}`; // +2 car ligne 1 = header
+      dayGrid.appendChild(matchEl);
+    });
+
+    // Pauses (directement dans la dayGrid)
+    (p.breaks || []).forEach((b) => {
+      if (b.day !== d) return;
+      if (b.terrain == null || b.startMin == null) return;
+      const terrainIdx = b.terrain - 1;
+      if (terrainIdx < 0 || terrainIdx >= terrains) return;
+      const rowOffset = Math.round((b.startMin - startMin) / STEP);
+      const rowSpan = Math.max(1, Math.round(b.durationMin / STEP));
+      const breakEl = el('div', { class: 'planning-break', draggable: 'true' },
+        '🍽️ Pause', el('span', { class: 'muted', style: { fontSize: '0.7rem', marginLeft: 'auto' } }, formatMinToTime(b.startMin)),
+        el('button', { class: 'match-remove', title: 'Supprimer la pause', onclick: (e) => { e.stopPropagation(); store.removePlanningItem(b.id); renderPlanning(); } }, 'x')
+      );
+      breakEl.style.gridColumn = `${terrainIdx + 2} / span 1`;
+      breakEl.style.gridRow = `${rowOffset + 2} / span ${rowSpan}`;
+      breakEl.addEventListener('dragstart', (e) => {
+        planningDragData = { itemId: b.id, isBreak: true };
+        e.dataTransfer.setData('text/plain', b.id);
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      dayGrid.appendChild(breakEl);
+    });
+
+    dayBlock.appendChild(dayGrid);
+    grid.appendChild(dayBlock);
   });
+}
 
-  // Pauses
-  (p.breaks || []).forEach((b) => {
-    const terrainIdx = b.terrain - 1;
-    const dayIdx = days.indexOf(b.day);
-    if (terrainIdx < 0 || dayIdx < 0) return;
-    const col = 1 + (dayIdx * terrains) + terrainIdx;
-    const rowOffset = Math.round((b.startMin - startMin) / STEP);
-    const rowSpan = Math.max(1, Math.round(b.durationMin / STEP));
-    const breakEl = el('div', { class: 'planning-break', draggable: 'true' },
-      '🍽️ Pause', el('span', { class: 'muted', style: { fontSize: '0.7rem', marginLeft: 'auto' } }, formatMinToTime(b.startMin)),
-      el('button', { class: 'match-remove', title: 'Supprimer la pause', onclick: (e) => { e.stopPropagation(); store.removePlanningItem(b.id); renderPlanning(); } }, 'x')
-    );
-    breakEl.style.gridColumn = `${col + 1} / span 1`;
-    breakEl.style.gridRow = `${rowOffset + 2} / span ${rowSpan}`;
-    breakEl.addEventListener('dragstart', (e) => {
-      planningDragData = { itemId: b.id, isBreak: true };
-      e.dataTransfer.setData('text/plain', b.id);
-      e.dataTransfer.effectAllowed = 'move';
-    });
-    grid.appendChild(breakEl);
+function attachCellDropHandler(cell, day, terrain, startMin) {
+  cell.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    cell.classList.add('drag-over');
+  });
+  cell.addEventListener('dragleave', () => cell.classList.remove('drag-over'));
+  cell.addEventListener('drop', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    cell.classList.remove('drag-over');
+    if (!planningDragData) return;
+    const itemId = planningDragData.itemId;
+    const target = { day, terrain, startMin };
+    const collision = store.movePlanningItem(itemId, target);
+    if (collision) {
+      store.unplacePlanningItem(itemId);
+      toast('Créneau occupé, match remis dans la sidebar.', 'warn');
+    } else {
+      toast('Match positionné ✓');
+    }
+    planningDragData = null;
+    renderPlanning();
   });
 }
 
@@ -1558,13 +1572,13 @@ function buildPlanningMatchEl(m) {
     e.dataTransfer.setData('text/plain', m.id);
     e.dataTransfer.effectAllowed = 'move';
     matchEl.classList.add('dragging');
-    const grid = $('#planning-grid');
-    if (grid) grid.classList.add('dragging-active');
+    const dayGrids = document.querySelectorAll('.planning-day-grid');
+    dayGrids.forEach(g => g.classList.add('dragging-active'));
   });
   matchEl.addEventListener('dragend', () => {
     matchEl.classList.remove('dragging');
-    const grid = $('#planning-grid');
-    if (grid) grid.classList.remove('dragging-active');
+    const dayGrids = document.querySelectorAll('.planning-day-grid');
+    dayGrids.forEach(g => g.classList.remove('dragging-active'));
   });
   return matchEl;
 }
@@ -1636,6 +1650,14 @@ function prettyDay(d) {
   const date = new Date(y, m - 1, day);
   const jours = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
   return `${jours[date.getDay()]} ${day}/${m}`;
+}
+
+function prettyDayFull(d) {
+  const [y, m, day] = d.split('-').map(Number);
+  const date = new Date(y, m - 1, day);
+  const jours = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+  const mois = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+  return `${jours[date.getDay()]} ${day} ${mois[m - 1]}`;
 }
 
 function formatMinToTime(mins) {
