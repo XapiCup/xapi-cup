@@ -93,7 +93,7 @@ function renderPlanning() {
     // Grille du jour
     const dayGrid = el('div', { class: 'planning-day-grid', style: { display: 'grid', gap: '1px', background: 'var(--color-border)' } });
     dayGrid.style.gridTemplateColumns = `70px repeat(${terrains}, minmax(130px, 1fr))`;
-    dayGrid.style.gridAutoRows = '44px';
+    dayGrid.style.gridAutoRows = '56px';
 
     // En-têtes (ligne 1)
     const hTime = el('div', { class: 'planning-grid-header', style: { gridColumn: '1', gridRow: '1' } }, 'Heure');
@@ -139,18 +139,18 @@ function renderPlanning() {
         const colIdx = t + 1;
 
         if (placed && placed.isStart && placed.type === 'match') {
-          const cell = el('div', { class: 'planning-grid-cell has-match', style: { gridColumn: `${colIdx}`, gridRow: `${rowIdx} / span ${placed.slotCount}`, position: 'relative', overflow: 'hidden', background: 'transparent', padding: '0' } });
+          const cell = el('div', { class: 'planning-grid-cell has-match', style: { gridColumn: `${colIdx}`, gridRow: `${rowIdx} / span ${placed.slotCount}`, position: 'relative', overflow: 'visible', background: 'transparent', padding: '0' } });
           const matchEl = el('div', {
             class: 'planning-match' + (placed.data.kind === 'bracket-placeholder' ? ' bracket-placeholder' : ''),
-            style: { position: 'absolute', inset: '0', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '4px 8px' },
+            style: { position: 'absolute', inset: '0', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '4px 8px', overflow: 'visible' },
           },
             el('span', { class: 'match-time', style: { fontWeight: '700' } }, formatMinToTime(placed.data.startMin)),
-            el('span', { class: 'match-label', style: { fontSize: '0.75rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, placed.data.label),
+            el('span', { class: 'match-label', style: { fontSize: '0.7rem', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: '1.1' } }, placed.data.label),
           );
           cell.appendChild(matchEl);
           dayGrid.appendChild(cell);
         } else if (placed && placed.isStart && placed.type === 'break') {
-          const cell = el('div', { class: 'planning-grid-cell has-break', style: { gridColumn: `${colIdx}`, gridRow: `${rowIdx} / span ${placed.slotCount}`, position: 'relative', overflow: 'hidden', background: 'transparent', padding: '0' } });
+          const cell = el('div', { class: 'planning-grid-cell has-break', style: { gridColumn: `${colIdx}`, gridRow: `${rowIdx} / span ${placed.slotCount}`, position: 'relative', overflow: 'visible', background: 'transparent', padding: '0' } });
           const breakEl = el('div', { class: 'planning-break', style: { position: 'absolute', inset: '0', display: 'flex', alignItems: 'center', padding: '4px 8px' } },
             '🍽️ Pause déj', el('span', { class: 'muted', style: { fontSize: '0.7rem', marginLeft: 'auto' } }, formatMinToTime(placed.data.startMin)));
           cell.appendChild(breakEl);
