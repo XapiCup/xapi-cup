@@ -1800,6 +1800,8 @@ a:hover { text-decoration: underline; }
   overflow: auto;
   min-height: 400px;
   max-height: 75vh;
+  /* Permettre le scroll horizontal si beaucoup de terrains */
+  overflow-x: auto;
 }
 .planning-grid-header {
   background: var(--color-surface-2);
@@ -1851,6 +1853,10 @@ a:hover { text-decoration: underline; }
   font-style: italic;
 }
 .planning-match.dragging { opacity: 0.4; }
+/* Pendant un drag, les matchs placés laissent passer les events vers les cellules */
+.planning-grid.dragging-active .planning-match:not(.dragging) {
+  pointer-events: none;
+}
 .planning-match .match-time {
   font-weight: 700;
   font-family: 'Oswald', monospace;
