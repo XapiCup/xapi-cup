@@ -1395,12 +1395,45 @@ function renderPlanning() {
   const cfg = store.state.planning.config;
   $('#plan-terrains').value = cfg.terrains;
   $('#plan-start-time').value = cfg.startTime;
+  $('#plan-end-time').value = cfg.endTime || '19:00';
   $('#plan-match-duration').value = cfg.matchDuration;
   $('#plan-break-duration').value = cfg.breakDuration;
   $('#plan-visible-toggle').checked = !!store.state.planning.visible;
 
+  updateLunchOptions();
   renderPlanningGrid();
   renderPlanningSidebar();
+}
+
+function updateLunchOptions() {
+  const select = $('#plan-lunch-start');
+  if (!select) return;
+  const startTime = $('#plan-start-time').value || '09:00';
+  const endTime = $('#plan-end-time').value || '19:00';
+  const matchDur = parseInt($('#plan-match-duration').value, 10) || 20;
+  const breakDur = parseInt($('#plan-break-duration').value, 10) || 0;
+  const slot = matchDur + breakDur;
+  const startMin = parseTimeToMin(startTime);
+  const endMin = parseTimeToMin(endTime);
+  const lunchSlots = parseInt($('#plan-lunch-duration').value, 10) || 2;
+  const lunchDur = lunchSlots * slot;
+  const currentValue = select.value || '12:00';
+
+  clear(select);
+  // Proposer chaque créneau comme heure de début de pause déjeuner
+  // (sauf si la pause + le déjeuner dépassent l'heure de fin)
+  let added = 0;
+  for (let m = startMin; m + lunchDur <= endMin; m += slot) {
+    const timeStr = formatMinToTime(m);
+    const opt = el('option', { value: timeStr }, timeStr);
+    if (timeStr === currentValue) opt.selected = true;
+    select.appendChild(opt);
+    added++;
+  }
+  if (!added) {
+    select.appendChild(el('option', { value: '12:00' }, '12:00'));
+  }
+  select.disabled = !$('#plan-lunch-enabled')?.checked;
 }
 
 function collectPlanningConfig() {
@@ -1409,14 +1442,16 @@ function collectPlanningConfig() {
   const breakDuration = parseInt($('#plan-break-duration').value, 10) || 0;
   const slotDuration = matchDuration + breakDuration;
   const lunchSlots = parseInt($('#plan-lunch-duration').value, 10) || 2;
+  const lunchStart = $('#plan-lunch-start').value || '12:00';
   return {
     terrains: parseInt($('#plan-terrains').value, 10) || 2,
     startTime: $('#plan-start-time').value || '09:00',
+    endTime: $('#plan-end-time').value || '19:00',
     matchDuration,
     breakDuration,
     lunchBreak: lunchEnabled ? {
-      startTime: $('#plan-lunch-start').value || '12:00',
-      durationMin: lunchSlots * slotDuration, // nb de créneaux × durée d'un créneau
+      startTime: lunchStart,
+      durationMin: lunchSlots * slotDuration,
     } : null,
   };
 }
@@ -1701,10 +1736,18 @@ function bindPlanningUI() {
   });
   $('#plan-add-break-btn')?.addEventListener('click', () => {
     const p = store.state.planning;
-    if (!p.config.days?.length) { toast('Genere le planning d\'abord.', 'warn'); return; }
+    if (!p.config.days?.length) { toast('Génère le planning d\'abord.', 'warn'); return; }
     const firstDay = p.config.days[0];
     store.addPlanningBreak({ day: firstDay, terrain: 1, startMin: 720, durationMin: 60, kind: 'lunch' });
     renderPlanning();
+  });
+  // Mettre à jour les options du déjeuner quand les champs de config changent
+  ['#plan-start-time', '#plan-end-time', '#plan-match-duration', '#plan-break-duration', '#plan-lunch-duration'].forEach(sel => {
+    $(sel)?.addEventListener('change', updateLunchOptions);
+    $(sel)?.addEventListener('input', updateLunchOptions);
+  });
+  $('#plan-lunch-enabled')?.addEventListener('change', () => {
+    updateLunchOptions();
   });
 }
 
