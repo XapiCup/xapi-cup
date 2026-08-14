@@ -828,9 +828,9 @@ class Store {
       return { terrain: bestT, startMin: bestMin };
     }
 
-    // Vérifie si un jour est "plein" (tous les terrains ont dépassé une heure raisonnable, ex: 20:00)
+    // Vérifie si un jour est "plein" (tous les terrains ont dépassé l'heure de fin configurée)
     const SLOT = cfg.matchDuration + cfg.breakDuration;
-    const MAX_HOUR = 20 * 60; // 20:00
+    const MAX_HOUR = parseTimeToMin(cfg.endTime || '19:00');
     function checkDayFull(day, nbTerrains, map, slotDur) {
       let allLate = true;
       for (let t = 1; t <= nbTerrains; t++) {
