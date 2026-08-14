@@ -1473,12 +1473,15 @@ function renderPlanningGrid() {
   // Un créneau = durée match + pause entre matchs (pas de cases grisées)
   const SLOT = cfg.matchDuration + cfg.breakDuration;
 
-  // Plage horaire
+  // Plage horaire : de l'heure de début jusqu'à l'heure de fin configurée
   const allStart = p.matches.map((m) => m.startMin).filter((x) => x != null);
   const allEnd = p.matches.map((m) => (m.startMin || 0) + m.durationMin);
   const allBreakEnds = (p.breaks || []).map((b) => (b.startMin || 0) + b.durationMin);
-  const minStart = allStart.length ? Math.min(...allStart) : parseTimeToMin(cfg.startTime);
-  const maxEnd = allEnd.length ? Math.max(...allEnd, ...allBreakEnds) : minStart + SLOT * 6;
+  const cfgStart = parseTimeToMin(cfg.startTime);
+  const cfgEnd = parseTimeToMin(cfg.endTime || '19:00');
+  const minStart = allStart.length ? Math.min(...allStart, cfgStart) : cfgStart;
+  // La grille s'étend jusqu'à l'heure de fin configurée (ou le dernier match si plus tard)
+  const maxEnd = Math.max(cfgEnd, ...(allEnd.length ? allEnd : [cfgStart + SLOT * 6]), ...(allBreakEnds.length ? allBreakEnds : [0]));
   const startMin = Math.floor(minStart / SLOT) * SLOT;
   const endMin = Math.ceil(maxEnd / SLOT) * SLOT;
   const totalSlots = Math.round((endMin - startMin) / SLOT);
